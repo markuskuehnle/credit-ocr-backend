@@ -1,0 +1,72 @@
+#  Python 
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Byte-compiled / cache
+*.pyc
+*.pyo
+*.pyd
+*.pycache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment + Config 
+.env
+.env.*
+*.env
+*.toml.local
+*.conf.local
+*.secrets.*
+
+# Logs and Outputs 
+*.log
+logs/
+*.out
+*.err
+
+# Testing 
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.pytest_cache/
+nosetests.xml
+test-results/
+junit-*.xml
+
+# Tools 
+.mypy_cache/
+.pyre/
+.pytype/
+.dmypy.json
+.cache/
+.pdm.toml
+.pdm.lock
+poetry.lock
+Pipfile.lock
+
+# VSCode & IDEs 
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS / Misc 
+.DS_Store
+Thumbs.db
+
+# Build Artifacts 
+build/
+dist/
+*.egg-info/
+*.egg
+
+# OCR / App-specific 
+tmp/
+data/

@@ -4,4 +4,8 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "azure-ai-formrecognizer>=3.3.3",
+    "dotenv>=0.9.9",
+    "pytest>=8.4.0",
+]
