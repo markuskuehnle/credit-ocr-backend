@@ -7,5 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
     "azure-ai-formrecognizer>=3.3.3",
     "dotenv>=0.9.9",
+    "pyhocon>=0.3.61",
     "pytest>=8.4.0",
+    "testcontainers>=4.10.0",
 ]
