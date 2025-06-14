@@ -2,6 +2,10 @@
 
 ## Test
 
+1. Start docker 
+
+2. Run tests
+
 ```bash
-pytest tests
+pytest -s tests
 ```

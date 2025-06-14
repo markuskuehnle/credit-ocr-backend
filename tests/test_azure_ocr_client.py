@@ -9,8 +9,8 @@ from src.ocr.postprocess import extract_text_lines_with_bbox_and_confidence
 def test_azure_ocr_runs_successfully() -> None:
     """Analyzes a test PDF and writes OCR output to JSON with text, polygon-based bounding box, confidence, and page info."""
 
-    sample_pdf_path = Path("tests/tmp/sample.pdf")
-    output_path = Path("tests/tmp/ocr_result.json")
+    sample_pdf_path = Path("tests/tmp/sample_creditrequest.pdf")
+    output_path = Path("tests/tmp/sample_creditrequest_ocr_result.json")
 
     assert sample_pdf_path.exists(), f"Sample PDF not found at {sample_pdf_path}"
 
