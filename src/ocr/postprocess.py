@@ -1,7 +1,20 @@
 from typing import List, Dict, Any
 from collections import defaultdict
+from dataclasses import dataclass
 
 from azure.ai.formrecognizer import AnalyzeResult
+
+
+@dataclass
+class DocumentTypeConfig:
+    name: str
+    expected_fields: List[str]
+    field_descriptions: Dict[str, str]
+    validation_rules: Dict[str, Any]  # Optional validation rules per field
+
+@dataclass
+class DocumentProcessingConfig:
+    document_types: Dict[str, DocumentTypeConfig]
 
 
 def extract_text_lines_with_bbox_and_confidence(result: AnalyzeResult) -> list[dict[str, Any]]:
