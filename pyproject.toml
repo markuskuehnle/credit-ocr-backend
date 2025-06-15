@@ -1,7 +1,7 @@
 [project]
 name = "credit-ocr-demo-backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "Backend for credit request OCR demo"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -10,4 +10,17 @@ dependencies = [
     "pyhocon>=0.3.61",
     "pytest>=8.4.0",
     "testcontainers>=4.10.0",
+    "pytest-asyncio>=0.23.5",
+    "aiohttp>=3.9.3",
+    "pytest-ordering>=0.6",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

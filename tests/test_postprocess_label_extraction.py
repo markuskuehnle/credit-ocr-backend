@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
+import pytest
 from src.ocr.postprocess import normalize_ocr_lines
 
 
+@pytest.mark.order(2)  # Run second, after OCR test
 def test_normalize_ocr_lines_from_sample() -> None:
     sample_lines = [
         {"type": "line", "text": "Firmenname", "page": 1, "bounding_box": [{"x": 0.5, "y": 1.0}]*4},
@@ -20,6 +22,7 @@ def test_normalize_ocr_lines_from_sample() -> None:
     assert any("Demo Tech GmbH" in line["text"] for line in text_lines)
 
 
+@pytest.mark.order(2)  # Run second, after OCR test
 def test_normalize_ocr_lines_from_real_ocr() -> None:
     path = Path("tests/tmp/sample_creditrequest_ocr_result.json")
     assert path.exists(), f"Test file not found: {path}"

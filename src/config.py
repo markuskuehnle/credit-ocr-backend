@@ -1,7 +1,9 @@
 from dataclasses import dataclass, fields, is_dataclass
 from enum import EnumMeta
+from pathlib import Path
 
 from pyhocon import ConfigFactory, ConfigTree
+from .document_config import DocumentProcessingConfig
 
 
 def typed_value_from_config_tree(hocon: ConfigTree, field_type: type, field_name: str):
@@ -51,6 +53,7 @@ class AppConfig:
     indexing_state_filename: str
     generative_llm: GenerativeLlm
     minio: Minio = None
+    document_config: DocumentProcessingConfig = None
 
     def __init__(self, hocon_file_path=None):
         hocon = ConfigFactory.parse_file(hocon_file_path)
@@ -84,3 +87,12 @@ class AppConfig:
                     except Exception as e:
                         print(f"Failed to parse field '{field_name}': {e}")
                         setattr(self, field_name, None)
+
+        # Load document configuration
+        config_dir = Path(hocon_file_path).parent
+        doc_config_path = config_dir / "document_types.conf"
+        if doc_config_path.exists():
+            self.document_config = DocumentProcessingConfig.from_hocon(str(doc_config_path))
+        else:
+            print(f"Warning: Document configuration file not found at {doc_config_path}")
+            self.document_config = None

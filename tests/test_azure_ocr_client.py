@@ -2,10 +2,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src.ocr.azure_ocr_client import analyze_single_document_with_azure
 from src.ocr.postprocess import extract_text_lines_with_bbox_and_confidence
 
 
+@pytest.mark.order(1)  # Run first after conftest
 def test_azure_ocr_runs_successfully() -> None:
     """Analyzes a test PDF and writes OCR output to JSON with text, polygon-based bounding box, confidence, and page info."""
 
