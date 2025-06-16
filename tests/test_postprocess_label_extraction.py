@@ -17,8 +17,20 @@ def test_normalize_ocr_lines_from_sample() -> None:
     label_value = [entry for entry in normalized if entry["type"] == "label_value"]
     text_lines = [entry for entry in normalized if entry["type"] == "text_line"]
 
-    assert {"type": "label_value", "label": "Firmenname", "value": "Demo Tech GmbH", "page": 1} in label_value
-    assert {"type": "label_value", "label": "USt-ID", "value": "DE123456789", "page": 1} in label_value
+    # Check for expected label-value pairs, ignoring confidence
+    expected_pairs = [
+        {"type": "label_value", "label": "Firmenname", "value": "Demo Tech GmbH", "page": 1},
+        {"type": "label_value", "label": "USt-ID", "value": "DE123456789", "page": 1}
+    ]
+    
+    for expected in expected_pairs:
+        found = False
+        for actual in label_value:
+            if all(actual[k] == expected[k] for k in expected.keys()):
+                found = True
+                break
+        assert found, f"Expected pair not found: {expected}"
+
     assert any("Demo Tech GmbH" in line["text"] for line in text_lines)
 
 
@@ -47,7 +59,14 @@ def test_normalize_ocr_lines_from_real_ocr() -> None:
         "value": "Gesellschaft mit beschränkter Haftung (GmbH)",
         "page": 1,
     }
-    assert expected in label_value, f"Expected pair not found: {expected}"
+    
+    # Check for expected pair, ignoring confidence
+    found = False
+    for actual in label_value:
+        if all(actual[k] == expected[k] for k in expected.keys()):
+            found = True
+            break
+    assert found, f"Expected pair not found: {expected}"
 
     # Ensure fallback preserved unstructured content
     assert any("Innovationsntraße" in line["text"] for line in text_lines), "Expected line text not found"

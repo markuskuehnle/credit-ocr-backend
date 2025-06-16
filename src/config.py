@@ -1,9 +1,14 @@
 from dataclasses import dataclass, fields, is_dataclass
 from enum import EnumMeta
 from pathlib import Path
+import os
+import json
+from typing import Dict, Any, List, Optional
+import logging
 
 from pyhocon import ConfigFactory, ConfigTree
-from .document_config import DocumentProcessingConfig
+
+logger = logging.getLogger(__name__)
 
 
 def typed_value_from_config_tree(hocon: ConfigTree, field_type: type, field_name: str):
@@ -43,56 +48,92 @@ class GenerativeLlm:
 
 @dataclass
 class Minio:
+    endpoint: str
     access_key: str
     secret_key: str
-    endpoint: str
+    secure: bool
+    bucket: str
+    region: str
+
+
+@dataclass
+class DocumentTypeConfig:
+    name: str
+    expected_fields: List[str]
+    field_descriptions: Dict[str, str]
+    validation_rules: Dict[str, Any]
+    field_mappings: Dict[str, str] = None
+
+
+@dataclass
+class DocumentProcessingConfig:
+    document_types: Dict[str, DocumentTypeConfig]
+
+    @classmethod
+    def from_json(cls, config_path: str) -> 'DocumentProcessingConfig':
+        """Load document configuration from JSON file."""
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                doc_config = json.load(f)
+            
+            document_types = {}
+            for doc_type, config in doc_config.items():
+                document_types[doc_type] = DocumentTypeConfig(
+                    name=config['name'],
+                    expected_fields=config['expected_fields'],
+                    field_descriptions=config['field_descriptions'],
+                    validation_rules=config['validation_rules'],
+                    field_mappings=config.get('field_mappings', {})
+                )
+            
+            return cls(document_types=document_types)
+        except Exception as e:
+            logger.error(f"Failed to load document configuration from {config_path}: {e}")
+            raise
 
 
 @dataclass
 class AppConfig:
-    indexing_state_filename: str
     generative_llm: GenerativeLlm
-    minio: Minio = None
-    document_config: DocumentProcessingConfig = None
+    minio: Minio
+    document_config: Optional[DocumentProcessingConfig] = None
 
-    def __init__(self, hocon_file_path=None):
-        hocon = ConfigFactory.parse_file(hocon_file_path)
-
-        for field_obj in fields(AppConfig):
-            field_name = field_obj.name
-            field_type = field_obj.type
-
-            if is_dataclass(field_type):
-                if hocon.get(field_name, None) is not None:
-                    try:
-                        config_subtree = hocon.get_config(field_name)
-                        setattr(
-                            self,
-                            field_name,
-                            dataclass_from_config_tree(config_subtree, field_type),
-                        )
-                    except Exception as e:
-                        print(f"Failed to parse config section '{field_name}': {e}")
-                        setattr(self, field_name, None)
-                else:
-                    setattr(self, field_name, None)
+    def __init__(self, config_path: str):
+        """Initialize configuration from HOCON file."""
+        try:
+            # Parse HOCON configuration
+            config_data = ConfigFactory.parse_file(config_path)
+            
+            # Load LLM configuration
+            llm_config = config_data.get('generative_llm', {})
+            self.generative_llm = GenerativeLlm(
+                url=llm_config.get('url'),
+                model_name=llm_config.get('model_name')
+            )
+            
+            # Load Minio configuration
+            minio_config = config_data.get('minio', {})
+            self.minio = Minio(
+                endpoint=minio_config.get('endpoint', 'localhost:9000'),
+                access_key=minio_config.get('access_key', 'minioadmin'),
+                secret_key=minio_config.get('secret_key', 'minioadmin'),
+                secure=bool(minio_config.get('secure', False)),
+                bucket=minio_config.get('bucket', 'credit-ocr'),
+                region=minio_config.get('region', 'us-east-1')
+            )
+            
+            # Load document configuration from config/document_types.conf
+            doc_config_path = 'config/document_types.conf'
+            if os.path.exists(doc_config_path):
+                try:
+                    self.document_config = DocumentProcessingConfig.from_json(doc_config_path)
+                except Exception as e:
+                    logger.warning(f"Failed to load document configuration from {doc_config_path}: {e}")
+                    self.document_config = None
             else:
-                if hocon.get(field_name, None) is not None:
-                    try:
-                        setattr(
-                            self,
-                            field_name,
-                            typed_value_from_config_tree(hocon, field_type, field_name),
-                        )
-                    except Exception as e:
-                        print(f"Failed to parse field '{field_name}': {e}")
-                        setattr(self, field_name, None)
-
-        # Load document configuration
-        config_dir = Path(hocon_file_path).parent
-        doc_config_path = config_dir / "document_types.conf"
-        if doc_config_path.exists():
-            self.document_config = DocumentProcessingConfig.from_hocon(str(doc_config_path))
-        else:
-            print(f"Warning: Document configuration file not found at {doc_config_path}")
-            self.document_config = None
+                logger.warning(f"Document configuration file not found at {doc_config_path}")
+                self.document_config = None
+            
+        except Exception as e:
+            logger.error(f"Failed to load configuration from {config_path}: {e}")
+            raise
