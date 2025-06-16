@@ -7,6 +7,8 @@ import json
 from datetime import datetime
 import fitz
 import shutil
+from collections import defaultdict
+from src.config import DocumentTypeConfig, DocumentProcessingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -80,89 +82,108 @@ def draw_bounding_box(
 
 def visualize_extracted_fields(
     pdf_path: Path,
-    extracted_fields: Dict[str, Any],
+    normalized_data: List[Dict[str, Any]],
     output_path: Path,
-    ocr_lines: List[Dict[str, Any]] = None
+    doc_config: DocumentTypeConfig = None
 ) -> None:
     """
-    Visualize extracted fields on the PDF by drawing bounding boxes and confidence scores.
+    Visualize extracted fields on PDF pages using normalized data.
     
     Args:
-        pdf_path: Path to the input PDF file
-        extracted_fields: Dictionary of extracted fields with their values and metadata
-        output_path: Path where the visualization should be saved
-        ocr_lines: Optional list of original OCR lines for reference
+        pdf_path: Path to the PDF file
+        normalized_data: List of normalized OCR items (label_value pairs and text lines)
+        output_path: Path where to save the output images
+        doc_config: Document type configuration containing field mappings
     """
-    # Convert PDF to images with higher DPI for better quality
-    images = convert_from_path(str(pdf_path), dpi=150)
-    logger.info(f"Converted PDF to {len(images)} images")
+    if not normalized_data:
+        logger.warning("No normalized data provided")
+        return
+
+    if not doc_config:
+        # Load document configuration if not provided
+        try:
+            doc_config = DocumentProcessingConfig.from_json("config/document_types.conf")
+            doc_config = doc_config.document_types["credit_request"]
+        except Exception as e:
+            logger.warning(f"Failed to load document configuration: {e}")
+            return
+
+    # Convert PDF pages to images
+    images = convert_from_path(pdf_path, dpi=150)
+
+    # Group normalized items by page for faster lookup
+    items_by_page = defaultdict(list)
+    for item in normalized_data:
+        if item.get("bounding_box"):
+            items_by_page[item["page"]].append(item)
+
+    # Load font for text
+    try:
+        font = ImageFont.truetype("Arial", 12)
+    except IOError:
+        font = ImageFont.load_default()
 
     # Process each page
     for page_num, image in enumerate(images, 1):
-        # Create drawing context
         draw = ImageDraw.Draw(image)
-        
-        # Try to load Arial font, fall back to default if not available
-        try:
-            font = ImageFont.truetype("Arial", 16)
-        except IOError:
-            font = ImageFont.load_default()
-        
-        # Draw bounding boxes for each field
         boxes_drawn = 0
-        for field_name, field_data in extracted_fields.items():
-            if not isinstance(field_data, dict):
-                continue
-                
-            value = field_data.get("value")
-            if value is None:
+
+        # Get items for this page
+        page_items = items_by_page.get(page_num, [])
+
+        # Process each label-value pair
+        for item in page_items:
+            # Get the canonical field name from the label
+            field_name = None
+            label_text = item.get("label", item.get("text", ""))
+            normalized_label = label_text.lower().replace("?", "").replace("n", "").strip()
+            
+            for german_label, eng_name in doc_config.field_mappings.items():
+                normalized_mapping = german_label.lower().replace("?", "").replace("n", "").strip()
+                if normalized_mapping in normalized_label:
+                    field_name = eng_name
+                    break
+
+            if not field_name:
                 continue
 
-            # Find matching OCR line for this field value
-            matching_line = None
-            if ocr_lines:
-                for line in ocr_lines:
-                    if line["text"] == str(value) and line.get("page") == page_num:
-                        matching_line = line
-                        break
+            # Get bounding box and confidence
+            bbox = item.get("bounding_box")
+            confidence = item.get("confidence", 0.5)
+            
+            if not bbox:
+                continue
 
-            if matching_line and matching_line.get("bounding_box"):
-                # Get bounding box coordinates
-                bbox = matching_line["bounding_box"]
-                confidence = matching_line.get("confidence", 0.5)
-                
-                # Scale coordinates from inches to pixels (150 DPI)
-                points = [(int(p["x"] * 150), int(p["y"] * 150)) for p in bbox]
-                
-                # Choose color based on confidence
-                if confidence >= 0.8:
-                    color = (0, 255, 0)  # Green for high confidence
-                elif confidence >= 0.6:
-                    color = (255, 165, 0)  # Orange for medium confidence
-                else:
-                    color = (255, 0, 0)  # Red for low confidence
-                
-                # Draw bounding box with thicker line
-                draw.polygon(points, outline=color, width=3)
-                
-                # Calculate text position (directly above the box)
-                text = f"{field_name}: {value} ({confidence:.2f})"
-                text_width = font.getlength(text)
-                text_x = points[0][0]  # Left edge of box
-                text_y = min(p[1] for p in points) - 25  # 25 pixels above highest point of box
-                
-                # Draw text with black outline for better visibility
-                for offset in [(1,1), (-1,-1), (1,-1), (-1,1)]:
-                    draw.text((text_x + offset[0], text_y + offset[1]), text, fill=(0,0,0), font=font)
-                draw.text((text_x, text_y), text, fill=color, font=font)
-                boxes_drawn += 1
+            # Scale coordinates from inches to pixels (150 DPI)
+            points = [(int(p["x"] * 150), int(p["y"] * 150)) for p in bbox]
+            
+            # Choose color based on confidence
+            if confidence >= 0.8:
+                color = (0, 255, 0)  # Green for high confidence
+            elif confidence >= 0.6:
+                color = (255, 165, 0)  # Orange for medium confidence
             else:
-                # If no matching OCR line found, log it
-                logger.warning(f"No OCR line found for field {field_name} with value {value} on page {page_num}")
+                color = (255, 0, 0)  # Red for low confidence
+            
+            # Draw bounding box with thicker line
+            draw.polygon(points, outline=color, width=3)
+            
+            # Calculate text position (directly above the box)
+            value = item.get("value", item.get("text", ""))
+            text = f"{field_name}: {value} ({confidence:.2f})"
+            text_bbox = draw.textbbox((0, 0), text, font=font)
+            text_height = text_bbox[3] - text_bbox[1]
+            text_x = points[0][0]  # Left edge of box
+            text_y = min(p[1] for p in points) - text_height
+            
+            # Draw text with black outline for better visibility
+            for offset in [(1,1), (-1,-1), (1,-1), (-1,1)]:
+                draw.text((text_x + offset[0], text_y + offset[1]), text, fill=(0,0,0), font=font)
+            draw.text((text_x, text_y), text, fill=color, font=font)
+            
+            boxes_drawn += 1
 
-        logger.info(f"Drew {boxes_drawn} bounding boxes on page {page_num}")
-
-        # Save visualization (save all pages, even if no boxes were drawn)
+        # Save the page image
         output_file = output_path.parent / f"{output_path.stem}_page{page_num}.png"
-        image.save(output_file)
-        logger.info(f"Created visualization at {output_file}") 
+        image.save(output_file, "PNG")
+        logger.info(f"Drew {boxes_drawn} boxes on page {page_num}") 

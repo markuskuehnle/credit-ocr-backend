@@ -1,21 +1,13 @@
 import json
-from pathlib import Path
-import pytest
-import shutil
-import subprocess
-from src.visualization.pdf_visualizer import visualize_extracted_fields
 import logging
-import fitz
+import shutil
+from pathlib import Path
+
+import pytest
+
+from src.visualization.pdf_visualizer import visualize_extracted_fields
 
 logger = logging.getLogger(__name__)
-
-def is_poppler_installed() -> bool:
-    """Check if poppler is installed."""
-    try:
-        subprocess.run(['pdftoppm', '-v'], capture_output=True, check=True)
-        return True
-    except (subprocess.SubprocessError, FileNotFoundError):
-        return False
 
 @pytest.mark.order(4)  # Run after field extraction tests
 def test_visualize_extracted_fields(tmp_path):
@@ -29,29 +21,27 @@ def test_visualize_extracted_fields(tmp_path):
     logger.info(f"Looking for PDF at: {pdf_path.absolute()}")
     assert pdf_path.exists(), f"PDF file not found at {pdf_path}"
 
-    # Load extracted fields
-    extracted_fields_path = Path("tests/tmp/sample_creditrequest_extracted_fields.json")
-    logger.info(f"Looking for extracted fields at: {extracted_fields_path.absolute()}")
-    assert extracted_fields_path.exists(), f"Extracted fields file not found at {extracted_fields_path}"
-    
-    with open(extracted_fields_path, "r", encoding="utf-8") as f:
-        extracted_fields = json.load(f)
-    
-    # Verify we have the expected keys
-    assert "extracted_fields" in extracted_fields
-    assert "original" in extracted_fields
-    assert "original_ocr" in extracted_fields["original"]
-    
-    logger.info(f"Number of extracted fields: {len(extracted_fields['extracted_fields'])}")
-    logger.info(f"Number of OCR lines: {len(extracted_fields['original']['original_ocr'])}")
+    # Load normalized data
+    normalized_path = Path("tests/tmp/sample_creditrequest_normalized.json")
+    logger.info(f"Looking for normalized data at: {normalized_path.absolute()}")
+    assert normalized_path.exists(), f"Normalized data file not found at {normalized_path}"
+
+    with open(normalized_path, "r", encoding="utf-8") as f:
+        normalized_data = json.load(f)
+
+    # Log the normalized data for debugging
+    logger.info("Found the following normalized items:")
+    for item in normalized_data:
+        if item["type"] == "label_value":
+            confidence = item.get("confidence", 0.0)
+            logger.info(f"  {item['label']}: {item['value']} (confidence: {confidence})")
 
     # Create visualization
     output_path = Path("tests/tmp/sample_creditrequest_visualization")
     visualize_extracted_fields(
         pdf_path=pdf_path,
-        extracted_fields=extracted_fields["extracted_fields"],
-        output_path=output_path,
-        ocr_lines=extracted_fields["original"]["original_ocr"]
+        normalized_data=normalized_data,
+        output_path=output_path
     )
 
     # Verify visualization files were created
