@@ -195,7 +195,7 @@ def sample_ocr_lines():
         {"type": "line", "text": "Ca. 18.000 € (monatlich)", "page": 1, "bounding_box": [{"x": 3.0, "y": 19.01}]*4, "confidence": 0.96},
         {"type": "line", "text": "Zinssatz", "page": 1, "bounding_box": [{"x": 0.5, "y": 20.0}]*4, "confidence": 0.95},
         {"type": "line", "text": "Festzins, 3.2% p.a.", "page": 1, "bounding_box": [{"x": 3.0, "y": 20.01}]*4, "confidence": 0.97},
-        {"type": "line", "text": "Sondertilgungen gewünscht?", "page": 1, "bounding_box": [{"x": 0.5, "y": 21.0}]*4, "confidence": 0.95},
+        {"type": "line", "text": "Sondertilgungen gewünscht", "page": 1, "bounding_box": [{"x": 0.5, "y": 21.0}]*4, "confidence": 0.95},
         {"type": "line", "text": "[x] ja [ ] nein", "page": 1, "bounding_box": [{"x": 3.0, "y": 21.01}]*4, "confidence": 0.98},
         {"type": "line", "text": "Öffentliche Fördermittel beantragt?", "page": 1, "bounding_box": [{"x": 0.5, "y": 22.0}]*4, "confidence": 0.95},
         {"type": "line", "text": "[ ] ja [x] nein", "page": 1, "bounding_box": [{"x": 3.0, "y": 22.01}]*4, "confidence": 0.98},
