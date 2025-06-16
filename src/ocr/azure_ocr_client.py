@@ -32,13 +32,22 @@ def analyze_single_document_with_azure(document_path: str) -> Any:
         with open(document_path, "rb") as document_file:
             logger.info("Sending document to Azure OCR: %s", document_path)
 
+            # Use prebuilt-document model which provides better confidence scores
             poller = document_analysis_client.begin_analyze_document(
-                model_id="prebuilt-layout",
+                model_id="prebuilt-document",
                 document=document_file,
             )
             result = poller.result()
 
+            # Log some basic info about the result
             logger.info("Result retrieved from Azure OCR for %s", document_path)
+            logger.info("Number of pages: %d", len(result.pages))
+            
+            # Log confidence scores for first few words to verify
+            for page in result.pages[:1]:  # Just check first page
+                for word in page.words[:5]:  # Check first 5 words
+                    logger.info(f"Word: {word.content}, Confidence: {word.confidence}")
+
             return result
 
     except FileNotFoundError:
