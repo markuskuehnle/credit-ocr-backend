@@ -138,56 +138,32 @@ def process_document(ocr_result_path: Path, document_type: str = "credit_request
 def extract_json_from_response(response: str) -> Dict[str, Any]:
     """Extract JSON from LLM response, handling potential text prefixes and comments."""
     try:
-        # Find all JSON objects in the response
-        json_objects = []
-        start = 0
-        while True:
-            # Find the next JSON object
-            start = response.find('{', start)
-            if start == -1:
-                break
-                
-            # Find the matching closing brace
-            brace_count = 1
-            end = start + 1
-            while brace_count > 0 and end < len(response):
-                if response[end] == '{':
-                    brace_count += 1
-                elif response[end] == '}':
-                    brace_count -= 1
-                end += 1
-                
-            if brace_count == 0:
-                json_str = response[start:end]
-                try:
-                    # Try to parse the JSON object
-                    obj = json.loads(json_str)
-                    json_objects.append(obj)
-                except json.JSONDecodeError:
-                    pass
-                    
-            start = end
-            
-        if not json_objects:
-            raise ValueError("No valid JSON object found in response")
-            
-        # Use the last JSON object (usually the most complete one)
-        result = json_objects[-1]
+        # Find JSON between code blocks if present
+        if "```" in response:
+            # Find the first code block
+            start = response.find("```")
+            if start != -1:
+                # Skip the opening ```
+                start = response.find("\n", start) + 1
+                # Find the closing ```
+                end = response.find("```", start)
+                if end != -1:
+                    response = response[start:end].strip()
         
-        # If the result doesn't have the expected structure, wrap it
-        if not isinstance(result, dict) or "extracted_fields" not in result:
-            result = {
-                "extracted_fields": result,
-                "missing_fields": [],
-                "validation_results": {}
-            }
-            
-        return result
+        # Remove any comments
+        lines = []
+        for line in response.split('\n'):
+            if '//' in line:
+                line = line[:line.find('//')]
+            lines.append(line)
+        response = '\n'.join(lines)
         
-    except Exception as e:
-        logger.error(f"Failed to parse JSON from response: {str(e)}")
+        # Try to parse the JSON
+        return json.loads(response)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON from response: {e}")
         logger.error(f"Raw response: {response}")
-        raise
+        raise ValueError(f"Invalid JSON in response: {e}")
 
 def create_extraction_prompt(ocr_lines: List[Dict[str, Any]], config: DocumentTypeConfig) -> str:
     """Create a prompt for field extraction."""
@@ -336,6 +312,8 @@ async def extract_fields_with_llm(
 ) -> Dict[str, Any]:
     """
     Extract fields from OCR lines using LLM.
+    The LLM is only used to map OCR text to field names.
+    Original OCR data (value, confidence, bounding box, page) is preserved.
     
     Args:
         ocr_lines: List of OCR lines with text and metadata
@@ -353,47 +331,96 @@ async def extract_fields_with_llm(
             "validation_results": {}
         }
         
-    # Create prompt for field extraction
+    # Step 1: Let LLM map OCR text to field names
     prompt = create_extraction_prompt(ocr_lines, doc_config)
-    
-    # Get response from LLM
     response = await llm_client.generate(prompt)
     
-    # Extract JSON from response
     try:
-        result = extract_json_from_response(response)
+        llm_result = extract_json_from_response(response)
     except ValueError as e:
         logger.error(f"Failed to parse LLM response: {e}")
         logger.error(f"Raw response: {response}")
         raise
         
-    # Process extracted fields
-    extracted_fields = result.get("extracted_fields", {})
-    for field_name, field_data in extracted_fields.items():
+    # Step 2: Process extracted fields
+    extracted_fields = {}
+    for field_name, field_data in llm_result.get("extracted_fields", {}).items():
         # Ensure field data is a dictionary
         if not isinstance(field_data, dict):
             field_data = {"value": field_data}
-            extracted_fields[field_name] = field_data
             
         # Ensure required keys exist
         if "value" not in field_data:
             field_data["value"] = None
-        if "source" not in field_data:
-            field_data["source"] = "text_line"
             
-        # Add original OCR data if available
-        if original_ocr_lines:
-            ocr_data = find_original_ocr_data(field_data["value"], original_ocr_lines)
-            if ocr_data:
-                field_data.update(ocr_data)
+        # Step 3: Find matching normalized label-value pair
+        if field_data["value"] is not None:
+            value_str = str(field_data["value"]).lower()
+            
+            # Get all possible German labels for this field
+            german_labels = []
+            for label, eng_name in doc_config.field_mappings.items():
+                if eng_name == field_name:
+                    german_labels.append(label.lower())
+            
+            # First try to find a matching label-value pair
+            matching_pair = None
+            for line in ocr_lines:
+                if line["type"] == "label_value":
+                    line_label = line["label"].lower()
+                    line_value = line["value"].lower()
+                    
+                    # Match if either the label or value matches
+                    if (any(label in line_label for label in german_labels) or 
+                        value_str in line_value):
+                        matching_pair = line
+                        break
+            
+            if matching_pair:
+                # Use the label-value pair's data directly
+                extracted_fields[field_name] = {
+                    "value": matching_pair["value"],
+                    "confidence": matching_pair.get("confidence", 0.5),
+                    "bounding_box": matching_pair.get("bounding_box"),
+                    "page": matching_pair.get("page")
+                }
             else:
-                # If no OCR data found, set default confidence
-                field_data["confidence"] = 0.5
+                # If no matching pair found, try to find matching OCR line
+                matching_line = None
+                if original_ocr_lines:
+                    for line in original_ocr_lines:
+                        if line["type"] != "line":
+                            continue
+                            
+                        line_text = line["text"].lower()
+                        
+                        # Match if line contains either the value or any of the field's labels
+                        if value_str in line_text or any(label in line_text for label in german_labels):
+                            matching_line = line
+                            break
+                
+                if matching_line:
+                    # Use the OCR line's data directly
+                    extracted_fields[field_name] = {
+                        "value": matching_line["text"],
+                        "confidence": matching_line.get("confidence", 0.5),
+                        "bounding_box": matching_line.get("bounding_box"),
+                        "page": matching_line.get("page")
+                    }
+                else:
+                    # If no matching line found, use LLM output with default confidence
+                    extracted_fields[field_name] = {
+                        "value": field_data["value"],
+                        "confidence": 0.5
+                    }
         else:
-            # If no original OCR lines provided, set default confidence
-            field_data["confidence"] = 0.5
+            # If no value provided, use LLM output with default confidence
+            extracted_fields[field_name] = {
+                "value": field_data["value"],
+                "confidence": 0.5
+            }
             
-    # Apply field mappings
+    # Step 4: Apply field mappings
     mapped_fields = {}
     for field_name, field_data in extracted_fields.items():
         if field_name in doc_config.field_mappings:
@@ -402,18 +429,14 @@ async def extract_fields_with_llm(
         else:
             mapped_fields[field_name] = field_data
             
-    # Validate extracted fields
+    # Step 5: Validate fields
     validation_results = validate_extracted_fields(mapped_fields, doc_config)
     
-    # Prepare result
+    # Prepare final result
     result = {
         "extracted_fields": mapped_fields,
-        "missing_fields": result.get("missing_fields", []),
-        "validation_results": validation_results,
-        "original": {
-            "extracted_fields": extracted_fields,
-            "original_ocr": original_ocr_lines if original_ocr_lines else ocr_lines
-        }
+        "missing_fields": llm_result.get("missing_fields", []),
+        "validation_results": validation_results
     }
     
     return result 

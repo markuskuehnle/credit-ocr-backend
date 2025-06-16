@@ -276,17 +276,17 @@ async def test_field_extraction_with_llm(
         assert isinstance(field_data, dict)
         assert "value" in field_data
         assert "confidence" in field_data
-        assert "source" in field_data
+        # If field has OCR data, it should have bounding box and page
+        if "bounding_box" in field_data:
+            assert "page" in field_data
+            assert isinstance(field_data["bounding_box"], list)
+            assert isinstance(field_data["page"], int)
         
         # Check confidence value
         confidence = field_data["confidence"]
         if confidence is not None:
             assert isinstance(confidence, (int, float)), f"Confidence must be numeric, got {type(confidence)}"
             assert 0 <= confidence <= 1, f"Confidence must be between 0 and 1, got {confidence}"
-        
-        # Check source value
-        assert field_data["source"] in ["label_value", "text_line"], \
-            f"Source must be 'label_value' or 'text_line', got {field_data['source']}"
     
     # Check validation results
     validation = result["validation_results"]
@@ -344,7 +344,11 @@ async def test_extract_fields_from_sample(sample_ocr_lines, document_config, llm
         assert isinstance(field_data, dict)
         assert "value" in field_data
         assert "confidence" in field_data
-        assert "source" in field_data
+        # If field has OCR data, it should have bounding box and page
+        if "bounding_box" in field_data:
+            assert "page" in field_data
+            assert isinstance(field_data["bounding_box"], list)
+            assert isinstance(field_data["page"], int)
 
 @pytest.mark.asyncio
 async def test_extract_fields_from_real_ocr(document_config, llm_client):
@@ -369,7 +373,11 @@ async def test_extract_fields_from_real_ocr(document_config, llm_client):
         assert isinstance(field_data, dict)
         assert "value" in field_data
         assert "confidence" in field_data
-        assert "source" in field_data
+        # If field has OCR data, it should have bounding box and page
+        if "bounding_box" in field_data:
+            assert "page" in field_data
+            assert isinstance(field_data["bounding_box"], list)
+            assert isinstance(field_data["page"], int)
 
     # Save output for inspection
     out_path = Path("tests/tmp/sample_creditrequest_extracted_fields.json")
