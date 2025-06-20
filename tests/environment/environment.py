@@ -25,6 +25,7 @@ def setup_environment():
         port=int(app_config.generative_llm.url.split(":")[-1]),
         cache_dir="ollama_cache_generative",
     )
+    
     return ollama_generative
 
 def teardown_environment():

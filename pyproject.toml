@@ -7,7 +7,9 @@ authors = [
 ]
 dependencies = [
     "azure-ai-formrecognizer>=3.3.3",
+    "azure-storage-blob>=12.19.0",
     "dotenv>=0.9.9",
+    "psycopg2-binary>=2.9.9",
     "pyhocon>=0.3.61",
     "pytest>=8.4.0",
     "testcontainers>=4.10.0",
@@ -17,6 +19,9 @@ dependencies = [
     "pdf2image>=1.17.0",
     "Pillow>=10.2.0",
     "reportlab>=4.4.1",
+    "fitz>=0.0.1.dev2",
+    "frontend>=0.0.3",
+    "pymupdf>=1.26.1",
 ]
 requires-python = ">=3.10"
 readme = "README.md"
@@ -36,3 +41,26 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "no_global_setup: disables global ollama setup for DMS mock tests"
+]
+
+[supervisord]
+nodaemon=true
+logfile=/var/log/supervisor/supervisord.log
+
+[program:postgres]
+command=/usr/lib/postgresql/15/bin/postgres -D /var/lib/postgresql/data
+user=postgres
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/supervisor/postgres.log
+stderr_logfile=/var/log/supervisor/postgres_err.log
+environment=PGDATA="/var/lib/postgresql/data"
+
+[program:azurite]
+command=azurite --location /data/azurite --blobHost 0.0.0.0
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/supervisor/azurite.log
+stderr_logfile=/var/log/supervisor/azurite_err.log

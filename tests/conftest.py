@@ -3,6 +3,7 @@ import logging
 import requests
 from pathlib import Path
 import json
+import atexit
 
 from _pytest.config import Config as PytestConfig
 from src.config import AppConfig
@@ -16,17 +17,88 @@ app_config = AppConfig("tests/resources/test_application.conf")
 
 MODEL_CHECK_CACHE = {"generative": None, "embedding": None}
 
+# Global container tracking for cleanup
+_active_containers = []
+
+
+def cleanup_all_containers():
+    """Clean up all active containers on exit."""
+    for container in _active_containers:
+        try:
+            if container and hasattr(container, 'stop'):
+                # Check if container is still running before trying to stop it
+                if hasattr(container, '_container') and container._container:
+                    try:
+                        container._container.reload()
+                        if container._container.status == 'running':
+                            container.stop()
+                            logger.info(f"Stopped container: {container}")
+                        else:
+                            logger.info(f"Container already stopped: {container}")
+                    except Exception:
+                        # Container might not exist anymore, which is fine
+                        logger.debug(f"Container no longer exists: {container}")
+                else:
+                    logger.debug(f"Container object invalid: {container}")
+        except Exception as e:
+            # Only log as warning if it's not a "not found" error
+            if "404" not in str(e) and "Not Found" not in str(e):
+                logger.warning(f"Failed to stop container {container}: {e}")
+            else:
+                logger.debug(f"Container already removed: {container}")
+    
+    # Clear the list after cleanup
+    _active_containers.clear()
+
+
+# Register cleanup function to run on exit
+atexit.register(cleanup_all_containers)
+
 
 @pytest.fixture(scope="session", autouse=True)
-def setup():
-    setup_environment()
+def setup(request):
+    """Global test setup - only runs for tests that need Ollama."""
+    # Skip global setup for tests marked with no_global_setup
+    if request.node.get_closest_marker("no_global_setup"):
+        yield
+        return
+    
+    logger.info("Starting global test environment (Ollama)")
+    ollama_container = setup_environment()
+    _active_containers.append(ollama_container)
+    
     yield
+    
+    logger.info("Cleaning up global test environment")
     teardown_environment()
+    if ollama_container in _active_containers:
+        _active_containers.remove(ollama_container)
+
+
+@pytest.fixture(scope="session")
+def dms_mock_environment():
+    """Provide DMS mock environment for tests that need it."""
+    from src.dms_mock.environment import DmsMockEnvironment
+    
+    logger.info("Starting DMS mock environment")
+    dms_environment = DmsMockEnvironment()
+    dms_environment.start()
+    _active_containers.extend([dms_environment.postgres_container, dms_environment.azurite_container])
+    
+    yield dms_environment
+    
+    logger.info("Cleaning up DMS mock environment")
+    dms_environment.stop()
+    # Remove from active containers list
+    if dms_environment.postgres_container in _active_containers:
+        _active_containers.remove(dms_environment.postgres_container)
+    if dms_environment.azurite_container in _active_containers:
+        _active_containers.remove(dms_environment.azurite_container)
 
 
 # Session finish hook to print available models
 def pytest_sessionfinish(session: PytestConfig, exitstatus: int):
-    """Print model status after tests."""
+    """Print model status after tests and ensure cleanup."""
     if hasattr(session, 'app_config'):
         logger.info("\n\n=== Model Status Summary ===")
         logger.info(f"Generative LLM URL: {session.app_config.generative_llm.url}")
@@ -62,6 +134,9 @@ def pytest_sessionfinish(session: PytestConfig, exitstatus: int):
             "generative",
             session.app_config.generative_llm.model_name,
         )
+    
+    # Final cleanup
+    cleanup_all_containers()
 
 
 @pytest.fixture(scope="session")
