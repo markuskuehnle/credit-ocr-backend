@@ -204,26 +204,18 @@ class TestListOcrResultsInBucket:
     
     def test_lists_all_ocr_result_files_in_bucket(self):
         """Test that all OCR result files are listed from bucket."""
-        # Create mock blobs with proper string behavior
-        mock_blob1 = Mock()
-        mock_blob1.name = "ocr-raw/uuid1.json"
-        mock_blob2 = Mock()
-        mock_blob2.name = "ocr-raw/uuid2.json"
-        mock_blob3 = Mock()
-        mock_blob3.name = "ocr-raw/uuid3.json"
-        mock_blob4 = Mock()
-        mock_blob4.name = "raw/some-other-file.pdf"  # Should be filtered out
-        mock_blob5 = Mock()
-        mock_blob5.name = "ocr-raw/uuid4.json"
-        
-        mock_blob_list = [mock_blob1, mock_blob2, mock_blob3, mock_blob4, mock_blob5]
+        # Mock the list_blobs_in_stage method to return blob names
+        mock_blob_names = [
+            "uuid1.json",
+            "uuid2.json", 
+            "uuid3.json",
+            "uuid4.json"
+        ]
         
         with patch('src.ocr.storage.get_storage') as mock_get_storage:
             mock_storage = Mock()
             mock_get_storage.return_value = mock_storage
-            mock_container_client = Mock()
-            mock_storage.blob_service_client.get_container_client.return_value = mock_container_client
-            mock_container_client.list_blobs.return_value = mock_blob_list
+            mock_storage.list_blobs_in_stage.return_value = mock_blob_names
             
             document_uuids = list_ocr_results_in_bucket()
         
@@ -232,16 +224,12 @@ class TestListOcrResultsInBucket:
     
     def test_returns_empty_list_when_no_ocr_results_exist(self):
         """Test that empty list is returned when no OCR results exist."""
-        # When list_blobs is called with name_starts_with="ocr-raw/", it should return empty list
-        # since no blobs match that prefix
-        mock_blob_list = []
+        mock_blob_names = []
         
         with patch('src.ocr.storage.get_storage') as mock_get_storage:
             mock_storage = Mock()
             mock_get_storage.return_value = mock_storage
-            mock_container_client = Mock()
-            mock_storage.blob_service_client.get_container_client.return_value = mock_container_client
-            mock_container_client.list_blobs.return_value = mock_blob_list
+            mock_storage.list_blobs_in_stage.return_value = mock_blob_names
             
             document_uuids = list_ocr_results_in_bucket()
         
@@ -252,9 +240,7 @@ class TestListOcrResultsInBucket:
         with patch('src.ocr.storage.get_storage') as mock_get_storage:
             mock_storage = Mock()
             mock_get_storage.return_value = mock_storage
-            mock_container_client = Mock()
-            mock_storage.blob_service_client.get_container_client.return_value = mock_container_client
-            mock_container_client.list_blobs.side_effect = Exception("Storage error")
+            mock_storage.list_blobs_in_stage.side_effect = Exception("Storage error")
             
             document_uuids = list_ocr_results_in_bucket()
         
@@ -262,30 +248,22 @@ class TestListOcrResultsInBucket:
     
     def test_filters_only_json_files_from_ocr_raw_stage(self):
         """Test that only JSON files from OCR_RAW stage are included."""
-        # Create mock blobs that would be returned by list_blobs(name_starts_with="ocr-raw/")
-        # Only blobs starting with "ocr-raw/" should be in this list
-        mock_blob1 = Mock()
-        mock_blob1.name = "ocr-raw/uuid1.json"
-        mock_blob2 = Mock()
-        mock_blob2.name = "ocr-raw/uuid2.txt"  # Should be filtered out (not JSON)
-        mock_blob3 = Mock()
-        mock_blob3.name = "ocr-raw/uuid3.json"
-        mock_blob4 = Mock()
-        mock_blob4.name = "ocr-raw/uuid4.txt"  # Should be filtered out (not JSON)
-        mock_blob5 = Mock()
-        mock_blob5.name = "ocr-raw/uuid5.json"
-        
-        mock_blob_list = [mock_blob1, mock_blob2, mock_blob3, mock_blob4, mock_blob5]
+        # Mock blob names that include both JSON and non-JSON files
+        mock_blob_names = [
+            "uuid1.json",
+            "uuid2.txt",  # Should be filtered out (not JSON)
+            "uuid3.json",
+            "uuid4.txt",  # Should be filtered out (not JSON)
+            "uuid5.json"
+        ]
         
         with patch('src.ocr.storage.get_storage') as mock_get_storage:
             mock_storage = Mock()
             mock_get_storage.return_value = mock_storage
-            mock_container_client = Mock()
-            mock_storage.blob_service_client.get_container_client.return_value = mock_container_client
-            mock_container_client.list_blobs.return_value = mock_blob_list
+            mock_storage.list_blobs_in_stage.return_value = mock_blob_names
             
             document_uuids = list_ocr_results_in_bucket()
         
-        # Only JSON files from OCR_RAW stage should be included
+        # Only JSON files should be included
         expected_uuids = ["uuid1", "uuid3", "uuid5"]
         assert document_uuids == expected_uuids 
