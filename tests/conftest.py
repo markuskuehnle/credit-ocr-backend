@@ -136,9 +136,9 @@ def dms_mock_environment():
         raise RuntimeError("Azurite failed to start properly")
     
     # Ensure credit-docs container is created in Azurite
-    logger.info("Initializing credit-docs container in Azurite")
-    from src.creditsystem.storage import ensure_credit_docs_container
-    ensure_credit_docs_container()
+    logger.info("Initializing credit-docs containers in Azurite")
+    from src.creditsystem.storage import ensure_all_credit_docs_containers
+    ensure_all_credit_docs_containers()
     
     yield dms_environment
     

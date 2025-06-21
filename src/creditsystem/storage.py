@@ -20,11 +20,11 @@ logger = logging.getLogger(__name__)
 
 class Stage(Enum):
     """Processing stages for credit documents."""
-    RAW = "raw"
-    OCR_RAW = "ocr-raw"
-    OCR_CLEAN = "ocr-clean"
-    LLM = "llm"
-    ANNOTATED = "annotated"
+    RAW = "credit-docs-raw"
+    OCR_RAW = "credit-docs-ocr-raw"
+    OCR_CLEAN = "credit-docs-ocr-clean"
+    LLM = "credit-docs-llm"
+    ANNOTATED = "credit-docs-annotated"
 
 
 class BlobStorage:
@@ -55,40 +55,38 @@ class BlobStorage:
         # Initialize blob service client
         self.blob_service_client = BlobServiceClient.from_connection_string(self.connection_string)
         
-        # Container name for credit documents
-        self.container_name = "credit-docs"
-        
-        # Lazy initialization - don't create container until first use
-        self._container_initialized = False
+        # Track initialized containers
+        self._initialized_containers = set()
         self._container_lock = threading.Lock()
         
         self._initialized = True
-        logger.info(f"BlobStorage initialized with container: {self.container_name}")
+        logger.info("BlobStorage initialized with multiple containers")
     
-    def _ensure_container_exists(self) -> None:
-        """Ensure the credit-docs container exists."""
-        if self._container_initialized:
+    def _ensure_container_exists(self, container_name: str) -> None:
+        """Ensure a specific container exists."""
+        if container_name in self._initialized_containers:
             return
             
         with self._container_lock:
-            if self._container_initialized:
+            if container_name in self._initialized_containers:
                 return
                 
             try:
-                container_client = self.blob_service_client.get_container_client(self.container_name)
+                container_client = self.blob_service_client.get_container_client(container_name)
                 container_client.create_container()
-                logger.info(f"Container '{self.container_name}' created successfully")
+                logger.info(f"Container '{container_name}' created successfully")
             except ResourceExistsError:
-                logger.debug(f"Container '{self.container_name}' already exists")
+                logger.debug(f"Container '{container_name}' already exists")
             except Exception as e:
-                logger.error(f"Failed to create container '{self.container_name}': {e}")
+                logger.error(f"Failed to create container '{container_name}': {e}")
                 raise
             
-            self._container_initialized = True
+            self._initialized_containers.add(container_name)
     
-    def ensure_container_ready(self) -> None:
-        """Ensure the credit-docs container is ready for use (for test setup)."""
-        self._ensure_container_exists()
+    def ensure_all_containers_ready(self) -> None:
+        """Ensure all credit document containers are ready for use (for test setup)."""
+        for stage in Stage:
+            self._ensure_container_exists(stage.value)
     
     def blob_path(self, uuid: str, stage: Stage, ext: str) -> PurePosixPath:
         """
@@ -105,7 +103,7 @@ class BlobStorage:
         if not ext.startswith('.'):
             ext = f'.{ext}'
         
-        path = PurePosixPath(stage.value) / f"{uuid}{ext}"
+        path = PurePosixPath(f"{uuid}{ext}")
         return path
     
     def blob_client(self, uuid: str, stage: Stage, ext: str) -> BlobClient:
@@ -120,9 +118,10 @@ class BlobStorage:
         Returns:
             BlobClient for the specified blob
         """
-        self._ensure_container_exists()
+        container_name = stage.value
+        self._ensure_container_exists(container_name)
         blob_path = self.blob_path(uuid, stage, ext)
-        container_client = self.blob_service_client.get_container_client(self.container_name)
+        container_client = self.blob_service_client.get_container_client(container_name)
         return container_client.get_blob_client(str(blob_path))
     
     def upload_blob(self, uuid: str, stage: Stage, ext: str, data: bytes, overwrite: bool = True) -> None:
@@ -138,7 +137,7 @@ class BlobStorage:
         """
         blob_client = self.blob_client(uuid, stage, ext)
         blob_client.upload_blob(data, overwrite=overwrite)
-        logger.info(f"Uploaded blob: {self.blob_path(uuid, stage, ext)}")
+        logger.info(f"Uploaded blob: {stage.value}/{self.blob_path(uuid, stage, ext)}")
     
     def download_blob(self, uuid: str, stage: Stage, ext: str) -> Optional[bytes]:
         """
@@ -156,10 +155,10 @@ class BlobStorage:
             blob_client = self.blob_client(uuid, stage, ext)
             blob_data = blob_client.download_blob()
             data = blob_data.readall()
-            logger.info(f"Downloaded blob: {self.blob_path(uuid, stage, ext)}")
+            logger.info(f"Downloaded blob: {stage.value}/{self.blob_path(uuid, stage, ext)}")
             return data
         except Exception as e:
-            logger.warning(f"Failed to download blob {self.blob_path(uuid, stage, ext)}: {e}")
+            logger.warning(f"Failed to download blob {stage.value}/{self.blob_path(uuid, stage, ext)}: {e}")
             return None
     
     def blob_exists(self, uuid: str, stage: Stage, ext: str) -> bool:
@@ -196,19 +195,44 @@ class BlobStorage:
         try:
             blob_client = self.blob_client(uuid, stage, ext)
             blob_client.delete_blob()
-            logger.info(f"Deleted blob: {self.blob_path(uuid, stage, ext)}")
+            logger.info(f"Deleted blob: {stage.value}/{self.blob_path(uuid, stage, ext)}")
             return True
         except Exception as e:
-            logger.warning(f"Failed to delete blob {self.blob_path(uuid, stage, ext)}: {e}")
+            logger.warning(f"Failed to delete blob {stage.value}/{self.blob_path(uuid, stage, ext)}: {e}")
             return False
+    
+    def list_blobs_in_stage(self, stage: Stage) -> list[str]:
+        """
+        List all blobs in a specific stage container.
+        
+        Args:
+            stage: Processing stage
+            
+        Returns:
+            List of blob names in the stage container
+        """
+        container_name = stage.value
+        self._ensure_container_exists(container_name)
+        container_client = self.blob_service_client.get_container_client(container_name)
+        
+        blob_names = []
+        try:
+            blob_list = container_client.list_blobs()
+            for blob in blob_list:
+                blob_names.append(blob.name)
+            logger.info(f"Found {len(blob_names)} blobs in container: {container_name}")
+            return blob_names
+        except Exception as e:
+            logger.error(f"Failed to list blobs in container {container_name}: {e}")
+            return []
 
 
 def get_storage() -> BlobStorage:
-    """Get the singleton storage instance."""
+    """Get the singleton BlobStorage instance."""
     return BlobStorage()
 
 
-def ensure_credit_docs_container() -> None:
-    """Ensure the credit-docs container is ready for use (for test setup)."""
+def ensure_all_credit_docs_containers() -> None:
+    """Ensure all credit document containers exist (for test setup)."""
     storage = get_storage()
-    storage.ensure_container_ready() 
+    storage.ensure_all_containers_ready() 
