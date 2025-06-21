@@ -18,8 +18,9 @@ services:
       timeout: 5s
       retries: 5
 
-  azurite:
+  azurite-blob-storages:
     image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: azurite-blob-storages
     command: ["azurite", "--location", "/data", "--blobHost", "0.0.0.0"]
     ports:
       - "10000:10000"

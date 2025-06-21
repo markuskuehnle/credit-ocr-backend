@@ -4,6 +4,7 @@ Provides a local Postgres and Azurite setup for document management system emula
 """
 
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Optional
@@ -59,7 +60,7 @@ class DmsMockEnvironment:
                 DockerContainer("mcr.microsoft.com/azure-storage/azurite:latest")
                 .with_command(["azurite", "--location", "/data", "--blobHost", "0.0.0.0"])
                 .with_bind_ports(10000, None)  # Use random port
-                .with_name("dms-azurite")
+                .with_name("azurite-blob-storages")
             )
             self.azurite_container.start()
             
@@ -69,6 +70,16 @@ class DmsMockEnvironment:
             
             # Wait for Azurite to be ready
             wait_for_logs(self.azurite_container, ".*Azurite Blob service is starting.*", timeout=60)
+            
+            # Set environment variable for all code to use the same Azurite instance
+            connection_string = (
+                "DefaultEndpointsProtocol=http;"
+                "AccountName=devstoreaccount1;"
+                "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+                f"BlobEndpoint=http://localhost:{self.azurite_port}/devstoreaccount1;"
+            )
+            os.environ["AZURE_STORAGE_CONNECTION_STRING"] = connection_string
+            logger.info(f"Set AZURE_STORAGE_CONNECTION_STRING with port {self.azurite_port}")
             
             # Initialize database schema
             self._setup_database()
