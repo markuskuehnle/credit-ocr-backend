@@ -4,6 +4,9 @@ import requests
 from pathlib import Path
 import json
 import atexit
+import time
+import os
+import re
 
 from _pytest.config import Config as PytestConfig
 from src.config import AppConfig
@@ -55,6 +58,49 @@ def cleanup_all_containers():
 atexit.register(cleanup_all_containers)
 
 
+def get_azurite_port_from_env() -> int:
+    """Extract Azurite port from AZURE_STORAGE_CONNECTION_STRING environment variable."""
+    conn_str = os.environ.get("AZURE_STORAGE_CONNECTION_STRING", "")
+    m = re.search(r"BlobEndpoint=http://localhost:(\d+)/", conn_str)
+    return int(m.group(1)) if m else 10000
+
+
+def wait_for_azurite_ready(max_retries: int = 30, delay: float = 1.0) -> bool:
+    """Wait for Azurite to be ready by checking the blob service endpoint."""
+    logger.info("Waiting for Azurite to be ready...")
+    
+    # Get the port from the environment variable set by DMS mock
+    port = get_azurite_port_from_env()
+    logger.info(f"Checking Azurite at port: {port}")
+    
+    # Try different endpoints
+    endpoints = [
+        f"http://localhost:{port}/devstoreaccount1",
+        f"http://localhost:{port}/devstoreaccount1?restype=account",
+        f"http://localhost:{port}/"
+    ]
+    
+    for attempt in range(max_retries):
+        for endpoint in endpoints:
+            try:
+                logger.debug(f"Attempt {attempt + 1}: Checking {endpoint}")
+                response = requests.get(endpoint, timeout=5)
+                logger.info(f"Azurite responded with status {response.status_code} from {endpoint}")
+                # Accept any 2xx or 4xx status (4xx means service is up but endpoint not found)
+                if 200 <= response.status_code < 500:
+                    logger.info(f"Azurite is ready after {attempt + 1} attempts")
+                    return True
+            except requests.exceptions.RequestException as e:
+                logger.debug(f"Request failed for {endpoint}: {e}")
+                continue
+        
+        if attempt < max_retries - 1:
+            time.sleep(delay)
+    
+    logger.error(f"Azurite failed to become ready after {max_retries} attempts")
+    return False
+
+
 @pytest.fixture(scope="session", autouse=True)
 def setup(request):
     """Global test setup - only runs for tests that need Ollama."""
@@ -75,15 +121,24 @@ def setup(request):
         _active_containers.remove(ollama_container)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def dms_mock_environment():
-    """Provide DMS mock environment for tests that need it."""
+    """Provide DMS mock environment for all tests (includes Azurite for blob storage)."""
     from src.dms_mock.environment import DmsMockEnvironment
     
-    logger.info("Starting DMS mock environment")
+    logger.info("Starting DMS mock environment (Postgres + Azurite)")
     dms_environment = DmsMockEnvironment()
     dms_environment.start()
     _active_containers.extend([dms_environment.postgres_container, dms_environment.azurite_container])
+    
+    # Wait for Azurite to be ready before creating containers
+    if not wait_for_azurite_ready():
+        raise RuntimeError("Azurite failed to start properly")
+    
+    # Ensure credit-docs container is created in Azurite
+    logger.info("Initializing credit-docs container in Azurite")
+    from src.creditsystem.storage import ensure_credit_docs_container
+    ensure_credit_docs_container()
     
     yield dms_environment
     
