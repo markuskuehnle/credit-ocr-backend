@@ -188,4 +188,12 @@ class DmsMockEnvironment:
         """Get Azure Blob Service client."""
         if not self._started:
             raise RuntimeError("DMS mock environment not started")
-        return self.blob_service_client 
+        return self.blob_service_client
+    
+    def get_dms_service(self):
+        """Get DMS service for document operations."""
+        if not self._started:
+            raise RuntimeError("DMS mock environment not started")
+        
+        from .service import DmsService
+        return DmsService(self.postgres_connection, self.blob_service_client) 
