@@ -50,7 +50,7 @@ def write_ocr_results_to_bucket(
     # Get the blob path for return value
     blob_path = storage_client.blob_path(document_uuid, Stage.OCR_RAW, ".json")
     
-    logger.info(f"OCR results written to bucket: {blob_path}")
+    logger.info(f"OCR results written to bucket: {Stage.OCR_RAW.value}/{blob_path}")
     return str(blob_path)
 
 
@@ -118,18 +118,15 @@ def list_ocr_results_in_bucket() -> list[str]:
         List of document UUIDs that have OCR results
     """
     storage_client = get_storage()
-    container_client = storage_client.blob_service_client.get_container_client(storage_client.container_name)
-    
-    document_uuids = []
-    ocr_raw_prefix = f"{Stage.OCR_RAW.value}/"
     
     try:
-        blob_list = container_client.list_blobs(name_starts_with=ocr_raw_prefix)
-        for blob in blob_list:
-            # Extract UUID from blob name (e.g., "ocr-raw/uuid.json" -> "uuid")
-            blob_name = blob.name
+        blob_names = storage_client.list_blobs_in_stage(Stage.OCR_RAW)
+        
+        # Extract UUIDs from blob names (remove .json extension)
+        document_uuids = []
+        for blob_name in blob_names:
             if blob_name.endswith('.json'):
-                uuid_part = blob_name.replace(f"{ocr_raw_prefix}", "").replace('.json', '')
+                uuid_part = blob_name.replace('.json', '')
                 document_uuids.append(uuid_part)
         
         logger.info(f"Found {len(document_uuids)} OCR result files in bucket")

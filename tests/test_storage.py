@@ -12,12 +12,12 @@ class TestStage:
     """Test the Stage enum."""
     
     def test_stage_values_are_correct(self):
-        """Test that stage values match expected paths."""
-        assert Stage.RAW.value == "raw"
-        assert Stage.OCR_RAW.value == "ocr-raw"
-        assert Stage.OCR_CLEAN.value == "ocr-clean"
-        assert Stage.LLM.value == "llm"
-        assert Stage.ANNOTATED.value == "annotated"
+        """Test that stage values match expected bucket names."""
+        assert Stage.RAW.value == "credit-docs-raw"
+        assert Stage.OCR_RAW.value == "credit-docs-ocr-raw"
+        assert Stage.OCR_CLEAN.value == "credit-docs-ocr-clean"
+        assert Stage.LLM.value == "credit-docs-llm"
+        assert Stage.ANNOTATED.value == "credit-docs-annotated"
 
 
 class TestBlobStorage:
@@ -30,15 +30,15 @@ class TestBlobStorage:
         
         # Test PDF extension
         raw_path = storage.blob_path(test_uuid, Stage.RAW, ".pdf")
-        assert raw_path == PurePosixPath("raw/123e4567-e89b-12d3-a456-426614174000.pdf")
+        assert raw_path == PurePosixPath("123e4567-e89b-12d3-a456-426614174000.pdf")
         
         # Test JSON extension
         ocr_raw_path = storage.blob_path(test_uuid, Stage.OCR_RAW, ".json")
-        assert ocr_raw_path == PurePosixPath("ocr-raw/123e4567-e89b-12d3-a456-426614174000.json")
+        assert ocr_raw_path == PurePosixPath("123e4567-e89b-12d3-a456-426614174000.json")
         
         # Test without leading dot
         llm_path = storage.blob_path(test_uuid, Stage.LLM, "json")
-        assert llm_path == PurePosixPath("llm/123e4567-e89b-12d3-a456-426614174000.json")
+        assert llm_path == PurePosixPath("123e4567-e89b-12d3-a456-426614174000.json")
     
     def test_blob_path_handles_all_stages(self):
         """Test that blob_path works for all processing stages."""
@@ -50,7 +50,6 @@ class TestBlobStorage:
         for stage in all_stages:
             path = storage.blob_path(test_uuid, stage, ".pdf")
             assert isinstance(path, PurePosixPath)
-            assert path.parts[0] == stage.value
             assert path.name == f"{test_uuid}.pdf"
     
     def test_singleton_pattern(self):
@@ -70,7 +69,8 @@ class TestBlobStorage:
         
         from azure.storage.blob import BlobClient
         assert isinstance(blob_client, BlobClient)
-        assert blob_client.blob_name == f"raw/{test_uuid}.pdf"
+        assert blob_client.blob_name == f"{test_uuid}.pdf"
+        assert blob_client.container_name == Stage.RAW.value
     
     def test_upload_and_download_blob(self):
         """Test uploading and downloading a blob."""
@@ -113,4 +113,27 @@ class TestBlobStorage:
             
             # Clean up
             storage.delete_blob(test_uuid, stage, ".json")
-            assert not storage.blob_exists(test_uuid, stage, ".json") 
+            assert not storage.blob_exists(test_uuid, stage, ".json")
+    
+    def test_list_blobs_in_stage(self):
+        """Test listing blobs in a specific stage."""
+        storage = get_storage()
+        test_uuid = "test-uuid-list"
+        test_data = b"test data for listing"
+        
+        # Upload a blob to OCR_RAW stage
+        storage.upload_blob(test_uuid, Stage.OCR_RAW, ".json", test_data)
+        
+        # List blobs in OCR_RAW stage
+        blob_names = storage.list_blobs_in_stage(Stage.OCR_RAW)
+        
+        # Should contain our test blob
+        expected_blob_name = f"{test_uuid}.json"
+        assert expected_blob_name in blob_names
+        
+        # Clean up
+        storage.delete_blob(test_uuid, Stage.OCR_RAW, ".json")
+        
+        # List again should be empty or not contain our blob
+        blob_names_after_cleanup = storage.list_blobs_in_stage(Stage.OCR_RAW)
+        assert expected_blob_name not in blob_names_after_cleanup 

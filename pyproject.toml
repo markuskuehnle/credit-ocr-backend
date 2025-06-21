@@ -3,7 +3,7 @@ name = "credit-ocr-demo-backend"
 version = "0.1.0"
 description = "Backend for credit request OCR demo"
 authors = [
-    {name = "Markus Kuehnle", email = "markus.kuehnle@example.com"},
+    {name = "Markus Kuehnle"},
 ]
 dependencies = [
     "azure-ai-formrecognizer>=3.3.3",
