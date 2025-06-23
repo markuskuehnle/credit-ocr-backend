@@ -5,6 +5,8 @@ from pathlib import Path
 import uuid
 import tempfile
 import asyncio
+import psycopg2
+import os
 
 from src.creditsystem.storage import get_storage, Stage
 from src.ocr.storage import write_ocr_results_to_bucket, read_ocr_results_from_bucket
@@ -15,6 +17,28 @@ from src.visualization.pdf_visualizer import visualize_extracted_fields
 from src.config import DocumentProcessingConfig, AppConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _get_database_connection():
+    """Get database connection for status updates."""
+    # Try to get connection details from environment (DMS mock)
+    host = os.getenv("POSTGRES_HOST", "localhost")
+    port = os.getenv("POSTGRES_PORT", "5432")
+    database = os.getenv("POSTGRES_DB", "dms_meta")
+    user = os.getenv("POSTGRES_USER", "dms")
+    password = os.getenv("POSTGRES_PASSWORD", "dms")
+    
+    try:
+        return psycopg2.connect(
+            host=host,
+            port=port,
+            database=database,
+            user=user,
+            password=password
+        )
+    except Exception as e:
+        logger.warning(f"Failed to connect to database for status updates: {e}")
+        return None
 
 
 def trigger_extraction(document_id: str) -> str:
@@ -361,14 +385,66 @@ def _fetch_original_pdf_from_dms(document_id: str) -> bytes:
 
 def _save_extraction_job(extraction_job: Dict[str, Any]) -> None:
     """Save extraction job to database."""
-    # Placeholder implementation
-    logger.info(f"Extraction job saved: {extraction_job['job_id']}")
+    connection = _get_database_connection()
+    if connection is None:
+        logger.warning("Database connection not available, skipping job save")
+        return
+    
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO extraction_job (id, dokument_id, state, worker_log) 
+                VALUES (%s, %s, %s, %s)
+                """,
+                (
+                    extraction_job['job_id'],
+                    extraction_job['document_id'],
+                    'PENDING',
+                    f"Job created with status: {extraction_job['status']}"
+                )
+            )
+            connection.commit()
+            logger.info(f"Extraction job saved to database: {extraction_job['job_id']}")
+    except Exception as e:
+        logger.error(f"Failed to save extraction job to database: {e}")
+    finally:
+        connection.close()
 
 
 def _update_extraction_job_status(document_id: str, status: str) -> None:
     """Update extraction job status in database."""
-    # Placeholder implementation
-    logger.info(f"Updated status for document {document_id}: {status}")
+    connection = _get_database_connection()
+    if connection is None:
+        logger.warning("Database connection not available, skipping status update")
+        return
+    
+    try:
+        with connection.cursor() as cursor:
+            # Update the most recent extraction job for this document
+            cursor.execute(
+                """
+                UPDATE extraction_job 
+                SET state = %s, worker_log = %s, finished_at = CASE 
+                    WHEN %s IN ('Fertig', 'Geprüft', 'Fehlerhaft') THEN NOW() 
+                    ELSE finished_at 
+                END
+                WHERE dokument_id = %s 
+                AND id = (
+                    SELECT id FROM extraction_job 
+                    WHERE dokument_id = %s 
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                )
+                """,
+                (status, f"Status updated to: {status}", status, document_id, document_id)
+            )
+            connection.commit()
+            logger.info(f"Updated status for document {document_id}: {status}")
+    except Exception as e:
+        logger.error(f"Failed to update status for document {document_id}: {e}")
+    finally:
+        connection.close()
 
 
 def _get_current_timestamp() -> str:
