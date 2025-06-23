@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture(scope="session")
 def redis_container():
-    with RedisContainer() as redis:
+    with RedisContainer().with_name("redis") as redis:
         yield redis
 
 @pytest.fixture(scope="session")

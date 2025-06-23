@@ -15,6 +15,7 @@ def start_ollama(model_name: str, port: int, cache_dir: str) -> DockerContainer:
         .with_bind_ports(11434, port)
         .with_volume_mapping(f"{curr_dir}/../data/{cache_dir}", "/root/.ollama", "rw")
         .with_kwargs(mem_limit="8g")  # Increase container memory to 8 GB
+        .with_name("ollama")
     )
     container.start()
 
