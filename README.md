@@ -40,7 +40,7 @@ src/
 │   ├── environment.py      # Test environment setup
 │   └── service.py          # DMS service operations
 ├── visualization/          # Document visualization
-└── config.py              # Application configuration
+└── config.py               # Application configuration
 ```
 
 ### Processing Pipeline
