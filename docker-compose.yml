@@ -3,6 +3,7 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
+    container_name: postgres
     environment:
       POSTGRES_DB: dms_meta
       POSTGRES_USER: dms
@@ -18,7 +19,7 @@ services:
       timeout: 5s
       retries: 5
 
-  azurite-blob-storages:
+  azurite:
     image: mcr.microsoft.com/azure-storage/azurite:latest
     container_name: azurite-blob-storages
     command: ["azurite", "--location", "/data", "--blobHost", "0.0.0.0"]
