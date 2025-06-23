@@ -22,6 +22,9 @@ dependencies = [
     "fitz>=0.0.1.dev2",
     "frontend>=0.0.3",
     "pymupdf>=1.26.1",
+    "celery[redis]>=5.4.0",
+    "redis>=5.0.7",
+    "testcontainers-redis==0.0.1rc1"
 ]
 requires-python = ">=3.10"
 readme = "README.md"
@@ -45,22 +48,58 @@ markers = [
     "no_global_setup: disables global ollama setup for DMS mock tests"
 ]
 
-[supervisord]
+[tool.supervisord]
 nodaemon=true
-logfile=/var/log/supervisor/supervisord.log
+logfile="/var/log/supervisor/supervisord.log"
 
-[program:postgres]
-command=/usr/lib/postgresql/15/bin/postgres -D /var/lib/postgresql/data
-user=postgres
+[tool.supervisord.program.postgres]
+command="/usr/lib/postgresql/15/bin/postgres -D /var/lib/postgresql/data"
+user="postgres"
 autostart=true
 autorestart=true
-stdout_logfile=/var/log/supervisor/postgres.log
-stderr_logfile=/var/log/supervisor/postgres_err.log
-environment=PGDATA="/var/lib/postgresql/data"
+stdout_logfile="/var/log/supervisor/postgres.log"
+stderr_logfile="/var/log/supervisor/postgres_err.log"
+environment="PGDATA=/var/lib/postgresql/data"
 
-[program:azurite]
-command=azurite --location /data/azurite --blobHost 0.0.0.0
+[tool.supervisord.program.azurite]
+command="azurite --location /data/azurite --blobHost 0.0.0.0"
 autostart=true
 autorestart=true
-stdout_logfile=/var/log/supervisor/azurite.log
-stderr_logfile=/var/log/supervisor/azurite_err.log
+stdout_logfile="/var/log/supervisor/azurite.log"
+stderr_logfile="/var/log/supervisor/azurite_err.log"
+
+[tool.poetry.dependencies]
+python = ">=3.10, <3.12"
+# Core dependencies
+fastapi = "^0.112.0"
+uvicorn = {extras = ["standard"], version = "^0.30.3"}
+pydantic = "^2.9.0"
+python-multipart = "^0.0.9"
+# Database
+sqlalchemy = "^2.0.33"
+psycopg2-binary = "^2.9.9"
+alembic = "^1.13.2"
+# Azure
+azure-storage-blob = "^12.21.0"
+azure-identity = "^1.17.1"
+azure-ai-formrecognizer = "^3.3.3"
+# Configuration
+pyhocon = "^0.3.62"
+# Testcontainers
+testcontainers = {extras = ["postgres", "redis"], version = "^4.8.0"}
+# DMS Mock
+requests = "^2.32.3"
+# LLM
+aiohttp = "^3.9.5"
+# Celery
+celery = "^5.4.0"
+redis = "^5.0.7"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.4.0"
+pytest-ordering = "^0.6"
+pytest-asyncio = "^0.23.8"
+ruff = "^0.5.5"
+anyio = "^4.4.0"
+httpx = "^0.27.0"
+testcontainers-redis = "^0.0.1"
