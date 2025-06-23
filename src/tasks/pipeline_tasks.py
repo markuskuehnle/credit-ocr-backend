@@ -10,6 +10,7 @@ from src.ocr.extraction import (
     run_llm_extraction,
     generate_visualization,
     _update_extraction_job_status,
+    _get_database_connection,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,9 +28,37 @@ def handle_extraction_error(document_id: str, exception: Exception, task_name: s
     error_message = f"Task {task_name} failed for document {document_id}: {str(exception)}"
     logger.error(error_message, exc_info=True)
     
-    # Update extraction job status to "Fehlerhaft"
+    # Update extraction job status to "Fehlerhaft" and store error message
     try:
+        # First update the status
         _update_extraction_job_status(document_id, "Fehlerhaft")
+        
+        # Then update the error message in the database
+        connection = _get_database_connection()
+        if connection is not None:
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE Extraktionsauftrag 
+                        SET fehlermeldung = %s
+                        WHERE dokument_id = %s 
+                        AND auftrag_id = (
+                            SELECT auftrag_id FROM Extraktionsauftrag 
+                            WHERE dokument_id = %s 
+                            ORDER BY erstellt_am DESC 
+                            LIMIT 1
+                        )
+                        """,
+                        (error_message, document_id, document_id)
+                    )
+                    connection.commit()
+                    logger.info(f"Updated error message for document {document_id}")
+            except Exception as db_error:
+                logger.error(f"Failed to update error message for document {document_id}: {db_error}")
+            finally:
+                connection.close()
+        
         logger.info(f"Updated status to 'Fehlerhaft' for document {document_id}")
     except Exception as status_update_error:
         logger.error(f"Failed to update status for document {document_id}: {status_update_error}")

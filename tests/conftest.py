@@ -7,6 +7,7 @@ import atexit
 import time
 import os
 import re
+import uuid
 
 from _pytest.config import Config as PytestConfig
 from src.config import AppConfig
@@ -101,6 +102,90 @@ def wait_for_azurite_ready(max_retries: int = 30, delay: float = 1.0) -> bool:
     return False
 
 
+def _upload_test_documents():
+    """Upload test documents to blob storage for testing."""
+    from pathlib import Path
+    from src.creditsystem.storage import get_storage, Stage
+    import json
+    import uuid
+    
+    storage = get_storage()
+    tmp_dir = Path("tests/tmp")
+    
+    # Generate test document IDs dynamically
+    test_documents = [
+        (str(uuid.uuid4()), "sample_creditrequest.pdf"),  # test-doc-complete-1
+        (str(uuid.uuid4()), "sample_creditrequest.pdf"),  # test-doc-ocr-1
+        (str(uuid.uuid4()), "sample_creditrequest.pdf"),  # test-doc-post-1
+        (str(uuid.uuid4()), "sample_creditrequest.pdf"),  # test-doc-llm-1
+        (str(uuid.uuid4()), "sample_creditrequest.pdf"),  # test-doc-viz-1
+    ]
+    
+    # Upload PDFs to RAW stage
+    for doc_id, pdf_file in test_documents:
+        pdf_path = tmp_dir / pdf_file
+        if pdf_path.exists():
+            with open(pdf_path, 'rb') as f:
+                pdf_data = f.read()
+            storage.upload_blob(doc_id, Stage.RAW, ".pdf", pdf_data)
+            logger.info(f"Uploaded {pdf_file} as {doc_id}.pdf to RAW stage")
+    
+    # Upload OCR results for documents that need them
+    ocr_results_file = tmp_dir / "sample_creditrequest_ocr_result.json"
+    if ocr_results_file.exists():
+        with open(ocr_results_file, 'r', encoding='utf-8') as f:
+            ocr_data = json.load(f)
+        
+        # Upload to OCR_RAW stage for documents that need OCR
+        for doc_id, _ in test_documents:
+            ocr_storage_data = {
+                "document_uuid": doc_id,
+                "timestamp": "2024-01-01T12:00:00Z",
+                "ocr_results": ocr_data,
+                "metadata": {"source": "test"}
+            }
+            storage.upload_blob(doc_id, Stage.OCR_RAW, ".json", 
+                              json.dumps(ocr_storage_data).encode('utf-8'))
+            logger.info(f"Uploaded OCR results for {doc_id} to OCR_RAW stage")
+    
+    # Upload clean OCR results for documents that need them
+    clean_ocr_file = tmp_dir / "sample_creditrequest_normalized.json"
+    if clean_ocr_file.exists():
+        with open(clean_ocr_file, 'r', encoding='utf-8') as f:
+            clean_ocr_data = json.load(f)
+        
+        # Upload to OCR_CLEAN stage for documents that need clean OCR
+        for doc_id, _ in test_documents:
+            clean_storage_data = {
+                "document_id": doc_id,
+                "normalized_lines": clean_ocr_data,
+                "original_lines": clean_ocr_data,  # Use same data for simplicity
+                "timestamp": "2024-01-01T12:00:00Z"
+            }
+            storage.upload_blob(doc_id, Stage.OCR_CLEAN, ".json", 
+                              json.dumps(clean_storage_data).encode('utf-8'))
+            logger.info(f"Uploaded clean OCR results for {doc_id} to OCR_CLEAN stage")
+    
+    # Upload LLM results for the complete test document
+    llm_results_file = tmp_dir / "sample_creditrequest_extracted_fields.json"
+    if llm_results_file.exists():
+        with open(llm_results_file, 'r', encoding='utf-8') as f:
+            llm_data = json.load(f)
+        
+        # Upload to LLM stage for the first test document
+        first_doc_id = test_documents[0][0]
+        llm_storage_data = {
+            "document_id": first_doc_id,
+            "extracted_fields": llm_data.get("extracted_fields", {}),
+            "missing_fields": llm_data.get("missing_fields", []),
+            "validation_results": llm_data.get("validation_results", {}),
+            "timestamp": "2024-01-01T12:00:00Z"
+        }
+        storage.upload_blob(first_doc_id, Stage.LLM, ".json", 
+                          json.dumps(llm_storage_data).encode('utf-8'))
+        logger.info(f"Uploaded LLM results for {first_doc_id} to LLM stage")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def setup(request):
     """Global test setup - only runs for tests that need Ollama."""
@@ -131,6 +216,15 @@ def dms_mock_environment():
     dms_environment.start()
     _active_containers.extend([dms_environment.postgres_container, dms_environment.azurite_container])
     
+    # Set database environment variables globally for all tests
+    os.environ["POSTGRES_HOST"] = "localhost"
+    os.environ["POSTGRES_PORT"] = str(dms_environment.postgres_port)
+    os.environ["POSTGRES_DB"] = "dms_meta"
+    os.environ["POSTGRES_USER"] = "dms"
+    os.environ["POSTGRES_PASSWORD"] = "dms"
+    
+    logger.info(f"Set database environment variables - Host: localhost, Port: {dms_environment.postgres_port}")
+    
     # Wait for Azurite to be ready before creating containers
     if not wait_for_azurite_ready():
         raise RuntimeError("Azurite failed to start properly")
@@ -139,6 +233,10 @@ def dms_mock_environment():
     logger.info("Initializing credit-docs containers in Azurite")
     from src.creditsystem.storage import ensure_all_credit_docs_containers
     ensure_all_credit_docs_containers()
+    
+    # Upload test documents to blob storage
+    logger.info("Uploading test documents to blob storage")
+    _upload_test_documents()
     
     yield dms_environment
     
@@ -149,6 +247,10 @@ def dms_mock_environment():
         _active_containers.remove(dms_environment.postgres_container)
     if dms_environment.azurite_container in _active_containers:
         _active_containers.remove(dms_environment.azurite_container)
+    
+    # Clean up environment variables
+    for var in ["POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"]:
+        os.environ.pop(var, None)
 
 
 # Session finish hook to print available models
@@ -208,3 +310,5 @@ def document_config():
     assert config_path.exists(), f"Configuration file not found: {config_path}"
     with open(config_path, 'r', encoding='utf-8') as f:
         return json.load(f)
+
+test_document_id = str(uuid.uuid4())

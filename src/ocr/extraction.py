@@ -29,13 +29,15 @@ def _get_database_connection():
     password = os.getenv("POSTGRES_PASSWORD", "dms")
     
     try:
-        return psycopg2.connect(
+        connection = psycopg2.connect(
             host=host,
             port=port,
             database=database,
             user=user,
-            password=password
+            password=password,
+            connect_timeout=5  # Add timeout to prevent hanging
         )
+        return connection
     except Exception as e:
         logger.warning(f"Failed to connect to database for status updates: {e}")
         return None
@@ -246,6 +248,28 @@ async def run_llm_extraction(document_id: str) -> Dict[str, Any]:
         original_ocr_lines=original_lines
     )
     
+    # Save each extracted field to the database
+    extracted_fields = extracted_fields_result.get("extracted_fields", {})
+    for field_name, field_data in extracted_fields.items():
+        # Handle both simple values and complex field data
+        if isinstance(field_data, dict):
+            field_value = field_data.get("value", str(field_data))
+            field_position = field_data.get("position")
+            field_confidence = field_data.get("confidence")
+        else:
+            field_value = str(field_data)
+            field_position = None
+            field_confidence = None
+        
+        # Save the field to the database
+        save_extracted_field(
+            document_id=document_id,
+            field_name=field_name,
+            value=field_value,
+            position=field_position,
+            confidence=field_confidence
+        )
+    
     # Prepare final result structure
     final_result = {
         "extracted_fields": extracted_fields_result["extracted_fields"],
@@ -394,13 +418,13 @@ def _save_extraction_job(extraction_job: Dict[str, Any]) -> None:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO extraction_job (id, dokument_id, state, worker_log) 
+                INSERT INTO Extraktionsauftrag (auftrag_id, dokument_id, status, fehlermeldung) 
                 VALUES (%s, %s, %s, %s)
                 """,
                 (
                     extraction_job['job_id'],
                     extraction_job['document_id'],
-                    'PENDING',
+                    extraction_job['status'],
                     f"Job created with status: {extraction_job['status']}"
                 )
             )
@@ -424,16 +448,16 @@ def _update_extraction_job_status(document_id: str, status: str) -> None:
             # Update the most recent extraction job for this document
             cursor.execute(
                 """
-                UPDATE extraction_job 
-                SET state = %s, worker_log = %s, finished_at = CASE 
+                UPDATE Extraktionsauftrag 
+                SET status = %s, fehlermeldung = %s, abgeschlossen_am = CASE 
                     WHEN %s IN ('Fertig', 'Geprüft', 'Fehlerhaft') THEN NOW() 
-                    ELSE finished_at 
+                    ELSE abgeschlossen_am 
                 END
                 WHERE dokument_id = %s 
-                AND id = (
-                    SELECT id FROM extraction_job 
+                AND auftrag_id = (
+                    SELECT auftrag_id FROM Extraktionsauftrag 
                     WHERE dokument_id = %s 
-                    ORDER BY created_at DESC 
+                    ORDER BY erstellt_am DESC 
                     LIMIT 1
                 )
                 """,
@@ -448,6 +472,45 @@ def _update_extraction_job_status(document_id: str, status: str) -> None:
 
 
 def _get_current_timestamp() -> str:
-    """Get current timestamp in ISO format."""
+    """Get current timestamp as string."""
     from datetime import datetime
-    return datetime.utcnow().isoformat() 
+    return datetime.now().isoformat()
+
+
+def save_extracted_field(document_id: str, field_name: str, value: str, position: Optional[Dict[str, Any]] = None, confidence: Optional[float] = None) -> None:
+    """
+    Save extracted field to ExtrahierteDaten table.
+    
+    Args:
+        document_id: UUID of the document
+        field_name: Name of the extracted field
+        value: Extracted value
+        position: Position information in the document (optional)
+        confidence: Confidence score for the extraction (optional)
+    """
+    connection = _get_database_connection()
+    if connection is None:
+        logger.warning("Database connection not available, skipping field save")
+        return
+    
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO ExtrahierteDaten (dokument_id, feldname, wert, position_im_dokument, konfidenzscore)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    document_id,
+                    field_name,
+                    value,
+                    json.dumps(position) if position else None,
+                    confidence
+                )
+            )
+            connection.commit()
+            logger.info(f"Saved extracted field '{field_name}' for document {document_id}")
+    except Exception as e:
+        logger.error(f"Failed to save extracted field '{field_name}' for document {document_id}: {e}")
+    finally:
+        connection.close() 
