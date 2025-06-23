@@ -126,13 +126,13 @@ def test_end_to_end_document_extraction_failure(dms_mock_environment, celery_app
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO dokument (
-                    id, blob_path, mime_type, hash_sha256, source_filename, 
-                    document_type, textextraction_status
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO Dokument (
+                    dokument_id, pfad_dms, dokumententyp, hash_sha256, quelle_dateiname, 
+                    textextraktion_status
+                ) VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                (test_document_id, "raw/test_failure.pdf", "application/pdf", "a" * 64, "test_failure.pdf", 
-                 "Kreditantrag", "not ready")
+                (test_document_id, "raw/test_failure.pdf", "Kreditantrag", "a" * 64, "test_failure.pdf", 
+                 "nicht bereit")
             )
             connection.commit()
     finally:
@@ -168,10 +168,10 @@ def test_end_to_end_document_extraction_failure(dms_mock_environment, celery_app
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT state, worker_log 
-                    FROM extraction_job 
+                    SELECT status, fehlermeldung 
+                    FROM Extraktionsauftrag 
                     WHERE dokument_id = %s 
-                    ORDER BY created_at DESC 
+                    ORDER BY erstellt_am DESC 
                     LIMIT 1
                     """,
                     (test_document_id,)
@@ -179,10 +179,10 @@ def test_end_to_end_document_extraction_failure(dms_mock_environment, celery_app
                 result_row = cursor.fetchone()
                 
                 if result_row:
-                    state, worker_log = result_row
+                    status, fehlermeldung = result_row
                     # The status should be "Fehlerhaft" or contain error information
-                    assert state == "Fehlerhaft" or "error" in worker_log.lower() or "failed" in worker_log.lower()
-                    logger.info(f"Extraction job status: {state}, log: {worker_log}")
+                    assert status == "Fehlerhaft" or "error" in fehlermeldung.lower() or "failed" in fehlermeldung.lower()
+                    logger.info(f"Extraction job status: {status}, log: {fehlermeldung}")
                 else:
                     # If no job record found, that's also acceptable as the error handling
                     # might prevent job creation

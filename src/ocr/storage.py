@@ -80,11 +80,26 @@ def read_ocr_results_from_bucket(document_uuid: str) -> Optional[Dict[str, Any]]
     
     # Parse JSON data
     try:
-        ocr_data = json.loads(blob_data.decode('utf-8'))
+        # Check if blob data is empty
+        if not blob_data:
+            logger.error(f"Empty blob data received for document {document_uuid}")
+            return None
+        
+        # Decode and parse JSON
+        json_string = blob_data.decode('utf-8')
+        if not json_string.strip():
+            logger.error(f"Empty JSON string for document {document_uuid}")
+            return None
+            
+        ocr_data = json.loads(json_string)
         logger.info(f"OCR results read from bucket for document: {document_uuid}")
         return ocr_data
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse OCR results JSON for document {document_uuid}: {e}")
+        logger.debug(f"Raw blob data (first 100 chars): {blob_data[:100] if blob_data else 'None'}")
+        return None
+    except UnicodeDecodeError as e:
+        logger.error(f"Failed to decode blob data as UTF-8 for document {document_uuid}: {e}")
         return None
 
 

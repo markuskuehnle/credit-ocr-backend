@@ -85,14 +85,14 @@ class DmsService:
         with self.postgres_connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO dokument (
-                    id, blob_path, mime_type, hash_sha256, source_filename, 
-                    document_type, linked_entity, linked_entity_id, textextraction_status
+                INSERT INTO Dokument (
+                    dokument_id, pfad_dms, dokumententyp, hash_sha256, quelle_dateiname, 
+                    verknuepfte_entitaet, verknuepfte_entitaet_id, textextraktion_status
                 ) 
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (document_id, blob_name, mime_type, file_hash, source_filename,
-                 document_type, linked_entity, linked_entity_id, "not ready")
+                (document_id, blob_name, document_type, file_hash, source_filename,
+                 linked_entity, linked_entity_id, "nicht bereit")
             )
             self.postgres_connection.commit()
         
@@ -113,11 +113,11 @@ class DmsService:
         with self.postgres_connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT id, blob_path, mime_type, uploaded_at, hash_sha256, 
-                       source_filename, document_type, linked_entity, linked_entity_id, 
-                       textextraction_status
-                FROM dokument 
-                WHERE id = %s
+                SELECT dokument_id, pfad_dms, dokumententyp, erstellt_am, hash_sha256, 
+                       quelle_dateiname, verknuepfte_entitaet, verknuepfte_entitaet_id, 
+                       textextraktion_status
+                FROM Dokument 
+                WHERE dokument_id = %s
                 """,
                 (document_id,)
             )
@@ -127,14 +127,13 @@ class DmsService:
                 return {
                     "id": result[0],
                     "blob_path": result[1],
-                    "mime_type": result[2],
+                    "document_type": result[2],
                     "uploaded_at": result[3],
                     "hash_sha256": result[4],
                     "source_filename": result[5],
-                    "document_type": result[6],
-                    "linked_entity": result[7],
-                    "linked_entity_id": result[8],
-                    "textextraction_status": result[9]
+                    "linked_entity": result[6],
+                    "linked_entity_id": result[7],
+                    "textextraction_status": result[8]
                 }
             return None
     
@@ -151,12 +150,12 @@ class DmsService:
         with self.postgres_connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT id, blob_path, mime_type, uploaded_at, hash_sha256, 
-                       source_filename, document_type, linked_entity, linked_entity_id, 
-                       textextraction_status
-                FROM dokument 
-                WHERE document_type = %s
-                ORDER BY uploaded_at DESC
+                SELECT dokument_id, pfad_dms, dokumententyp, erstellt_am, hash_sha256, 
+                       quelle_dateiname, verknuepfte_entitaet, verknuepfte_entitaet_id, 
+                       textextraktion_status
+                FROM Dokument 
+                WHERE dokumententyp = %s
+                ORDER BY erstellt_am DESC
                 """,
                 (document_type,)
             )
@@ -166,14 +165,13 @@ class DmsService:
                 {
                     "id": row[0],
                     "blob_path": row[1],
-                    "mime_type": row[2],
+                    "document_type": row[2],
                     "uploaded_at": row[3],
                     "hash_sha256": row[4],
                     "source_filename": row[5],
-                    "document_type": row[6],
-                    "linked_entity": row[7],
-                    "linked_entity_id": row[8],
-                    "textextraction_status": row[9]
+                    "linked_entity": row[6],
+                    "linked_entity_id": row[7],
+                    "textextraction_status": row[8]
                 }
                 for row in results
             ]
@@ -208,25 +206,25 @@ class DmsService:
         
         Args:
             document_id: UUID of the document
-            status: New status ('not ready', 'ready', 'in progress', 'done', 'error')
+            status: New status ('nicht bereit', 'bereit', 'in Bearbeitung', 'abgeschlossen', 'fehlerhaft')
             
         Returns:
             True if update was successful, False otherwise
         """
-        valid_statuses = ['not ready', 'ready', 'in progress', 'done', 'error']
+        valid_statuses = ['nicht bereit', 'bereit', 'in Bearbeitung', 'abgeschlossen', 'fehlerhaft']
         if status not in valid_statuses:
             raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
         
         with self.postgres_connection.cursor() as cursor:
             cursor.execute(
-                "UPDATE dokument SET textextraction_status = %s WHERE id = %s",
+                "UPDATE Dokument SET textextraktion_status = %s WHERE dokument_id = %s",
                 (status, document_id)
             )
             self.postgres_connection.commit()
             
             return cursor.rowcount > 0
     
-    def create_extraction_job(self, document_id: str, state: str = "PENDING") -> str:
+    def create_extraction_job(self, document_id: str, state: str = "Extraktion ausstehend") -> str:
         """
         Create an extraction job for a document.
         
@@ -242,7 +240,7 @@ class DmsService:
         with self.postgres_connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO extraction_job (id, dokument_id, state) 
+                INSERT INTO Extraktionsauftrag (auftrag_id, dokument_id, status) 
                 VALUES (%s, %s, %s)
                 """,
                 (job_id, document_id, state)
@@ -268,24 +266,24 @@ class DmsService:
             if worker_log:
                 cursor.execute(
                     """
-                    UPDATE extraction_job 
-                    SET state = %s, worker_log = %s, finished_at = CASE 
-                        WHEN %s IN ('SUCCESS', 'FAILURE') THEN NOW() 
-                        ELSE finished_at 
+                    UPDATE Extraktionsauftrag 
+                    SET status = %s, fehlermeldung = %s, abgeschlossen_am = CASE 
+                        WHEN %s IN ('Fertig', 'Fehlerhaft') THEN NOW() 
+                        ELSE abgeschlossen_am 
                     END
-                    WHERE id = %s
+                    WHERE auftrag_id = %s
                     """,
                     (state, worker_log, state, job_id)
                 )
             else:
                 cursor.execute(
                     """
-                    UPDATE extraction_job 
-                    SET state = %s, finished_at = CASE 
-                        WHEN %s IN ('SUCCESS', 'FAILURE') THEN NOW() 
-                        ELSE finished_at 
+                    UPDATE Extraktionsauftrag 
+                    SET status = %s, abgeschlossen_am = CASE 
+                        WHEN %s IN ('Fertig', 'Fehlerhaft') THEN NOW() 
+                        ELSE abgeschlossen_am 
                     END
-                    WHERE id = %s
+                    WHERE auftrag_id = %s
                     """,
                     (state, state, job_id)
                 )
@@ -306,10 +304,10 @@ class DmsService:
         with self.postgres_connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT id, dokument_id, created_at, finished_at, state, worker_log
-                FROM extraction_job 
+                SELECT auftrag_id, dokument_id, erstellt_am, abgeschlossen_am, status, fehlermeldung
+                FROM Extraktionsauftrag 
                 WHERE dokument_id = %s
-                ORDER BY created_at DESC
+                ORDER BY erstellt_am DESC
                 """,
                 (document_id,)
             )

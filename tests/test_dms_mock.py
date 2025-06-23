@@ -33,13 +33,13 @@ def test_can_create_document_record_in_postgres(postgres_connection):
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             """
-            INSERT INTO dokument (
-                id, blob_path, mime_type, hash_sha256, source_filename, 
-                document_type, linked_entity, linked_entity_id, textextraction_status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO Dokument (
+                dokument_id, pfad_dms, dokumententyp, hash_sha256, quelle_dateiname, 
+                verknuepfte_entitaet, verknuepfte_entitaet_id, textextraktion_status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (document_id, blob_path, mime_type, hash_sha256, "test.pdf", 
-             "Kreditantrag", "KREDITANTRAG", "123", "not ready")
+            (document_id, blob_path, "Kreditantrag", hash_sha256, "test.pdf", 
+             "KREDITANTRAG", "123", "nicht bereit")
         )
         postgres_connection.commit()
     
@@ -47,9 +47,9 @@ def test_can_create_document_record_in_postgres(postgres_connection):
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT id, blob_path, mime_type, hash_sha256, source_filename, 
-                   document_type, linked_entity, linked_entity_id, textextraction_status 
-            FROM dokument WHERE id = %s
+            SELECT dokument_id, pfad_dms, dokumententyp, hash_sha256, quelle_dateiname, 
+                   verknuepfte_entitaet, verknuepfte_entitaet_id, textextraktion_status 
+            FROM Dokument WHERE dokument_id = %s
             """, 
             (document_id,)
         )
@@ -58,13 +58,12 @@ def test_can_create_document_record_in_postgres(postgres_connection):
     assert result is not None
     assert result[0] == document_id
     assert result[1] == blob_path
-    assert result[2] == mime_type
+    assert result[2] == "Kreditantrag"
     assert result[3] == hash_sha256
     assert result[4] == "test.pdf"
-    assert result[5] == "Kreditantrag"
-    assert result[6] == "KREDITANTRAG"
-    assert result[7] == "123"
-    assert result[8] == "not ready"
+    assert result[5] == "KREDITANTRAG"
+    assert result[6] == "123"
+    assert result[7] == "nicht bereit"
 
 
 def test_can_upload_pdf_file_to_blob_storage(blob_service_client):
@@ -90,13 +89,13 @@ def test_can_create_extraction_task_for_document(postgres_connection):
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             """
-            INSERT INTO dokument (
-                id, blob_path, mime_type, hash_sha256, source_filename, 
-                document_type, textextraction_status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO Dokument (
+                dokument_id, pfad_dms, dokumententyp, hash_sha256, quelle_dateiname, 
+                textextraktion_status
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             """,
-            (document_id, "raw/test.pdf", "application/pdf", "a" * 64, "test.pdf", 
-             "Kreditantrag", "not ready")
+            (document_id, "raw/test.pdf", "Kreditantrag", "a" * 64, "test.pdf", 
+             "nicht bereit")
         )
         postgres_connection.commit()
     
@@ -104,15 +103,15 @@ def test_can_create_extraction_task_for_document(postgres_connection):
     job_id = str(uuid.uuid4())
     with postgres_connection.cursor() as cursor:
         cursor.execute(
-            "INSERT INTO extraction_job (id, dokument_id, state) VALUES (%s, %s, %s)",
-            (job_id, document_id, "PENDING")
+            "INSERT INTO Extraktionsauftrag (auftrag_id, dokument_id, status) VALUES (%s, %s, %s)",
+            (job_id, document_id, "Extraktion ausstehend")
         )
         postgres_connection.commit()
     
     # Verify the job was created
     with postgres_connection.cursor() as cursor:
         cursor.execute(
-            "SELECT id, dokument_id, state FROM extraction_job WHERE id = %s",
+            "SELECT auftrag_id, dokument_id, status FROM Extraktionsauftrag WHERE auftrag_id = %s",
             (job_id,)
         )
         result = cursor.fetchone()
@@ -120,41 +119,41 @@ def test_can_create_extraction_task_for_document(postgres_connection):
     assert result is not None
     assert result[0] == job_id
     assert result[1] == document_id
-    assert result[2] == "PENDING"
+    assert result[2] == "Extraktion ausstehend"
 
 
 def test_can_update_textextraction_status_of_document(postgres_connection):
     """Test that we can update the text extraction status of a document."""
     document_id = str(uuid.uuid4())
     
-    # Create document with 'not ready' status
+    # Create document with 'nicht bereit' status
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             """
-            INSERT INTO dokument (
-                id, blob_path, mime_type, hash_sha256, source_filename, 
-                document_type, textextraction_status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO Dokument (
+                dokument_id, pfad_dms, dokumententyp, hash_sha256, quelle_dateiname, 
+                textextraktion_status
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             """,
-            (document_id, "raw/test.pdf", "application/pdf", "a" * 64, "test.pdf", 
-             "Kreditantrag", "not ready")
+            (document_id, "raw/test.pdf", "Kreditantrag", "a" * 64, "test.pdf", 
+             "nicht bereit")
         )
         postgres_connection.commit()
     
-    # Update text extraction status to 'done'
+    # Update text extraction status to 'abgeschlossen'
     with postgres_connection.cursor() as cursor:
         cursor.execute(
-            "UPDATE dokument SET textextraction_status = %s WHERE id = %s",
-            ("done", document_id)
+            "UPDATE Dokument SET textextraktion_status = %s WHERE dokument_id = %s",
+            ("abgeschlossen", document_id)
         )
         postgres_connection.commit()
     
     # Verify the status was updated
     with postgres_connection.cursor() as cursor:
-        cursor.execute("SELECT textextraction_status FROM dokument WHERE id = %s", (document_id,))
+        cursor.execute("SELECT textextraktion_status FROM Dokument WHERE dokument_id = %s", (document_id,))
         result = cursor.fetchone()
     
-    assert result[0] == "done"
+    assert result[0] == "abgeschlossen"
 
 
 def test_can_complete_extraction_job(postgres_connection):
@@ -166,38 +165,38 @@ def test_can_complete_extraction_job(postgres_connection):
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             """
-            INSERT INTO dokument (
-                id, blob_path, mime_type, hash_sha256, source_filename, 
-                document_type, textextraction_status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO Dokument (
+                dokument_id, pfad_dms, dokumententyp, hash_sha256, quelle_dateiname, 
+                textextraktion_status
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             """,
-            (document_id, "raw/test.pdf", "application/pdf", "a" * 64, "test.pdf", 
-             "Kreditantrag", "not ready")
+            (document_id, "raw/test.pdf", "Kreditantrag", "a" * 64, "test.pdf", 
+             "nicht bereit")
         )
         cursor.execute(
-            "INSERT INTO extraction_job (id, dokument_id, state) VALUES (%s, %s, %s)",
-            (job_id, document_id, "PENDING")
+            "INSERT INTO Extraktionsauftrag (auftrag_id, dokument_id, status) VALUES (%s, %s, %s)",
+            (job_id, document_id, "Extraktion ausstehend")
         )
         postgres_connection.commit()
     
     # Complete the job
     with postgres_connection.cursor() as cursor:
         cursor.execute(
-            "UPDATE extraction_job SET state = %s, finished_at = NOW() WHERE id = %s",
-            ("SUCCESS", job_id)
+            "UPDATE Extraktionsauftrag SET status = %s, abgeschlossen_am = NOW() WHERE auftrag_id = %s",
+            ("Fertig", job_id)
         )
         postgres_connection.commit()
     
     # Verify the job was completed
     with postgres_connection.cursor() as cursor:
         cursor.execute(
-            "SELECT state, finished_at FROM extraction_job WHERE id = %s",
+            "SELECT status, abgeschlossen_am FROM Extraktionsauftrag WHERE auftrag_id = %s",
             (job_id,)
         )
         result = cursor.fetchone()
     
-    assert result[0] == "SUCCESS"
-    assert result[1] is not None  # finished_at should be set
+    assert result[0] == "Fertig"
+    assert result[1] is not None  # abgeschlossen_am should be set
 
 
 def test_cascade_delete_removes_extraction_jobs(postgres_connection):
@@ -210,31 +209,31 @@ def test_cascade_delete_removes_extraction_jobs(postgres_connection):
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             """
-            INSERT INTO dokument (
-                id, blob_path, mime_type, hash_sha256, source_filename, 
-                document_type, textextraction_status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO Dokument (
+                dokument_id, pfad_dms, dokumententyp, hash_sha256, quelle_dateiname, 
+                textextraktion_status
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             """,
-            (document_id, "raw/test.pdf", "application/pdf", "a" * 64, "test.pdf", 
-             "Kreditantrag", "not ready")
+            (document_id, "raw/test.pdf", "Kreditantrag", "a" * 64, "test.pdf", 
+             "nicht bereit")
         )
         cursor.execute(
-            "INSERT INTO extraction_job (id, dokument_id, state) VALUES (%s, %s, %s), (%s, %s, %s)",
-            (job_id_1, document_id, "PENDING", job_id_2, document_id, "SUCCESS")
+            "INSERT INTO Extraktionsauftrag (auftrag_id, dokument_id, status) VALUES (%s, %s, %s), (%s, %s, %s)",
+            (job_id_1, document_id, "Extraktion ausstehend", job_id_2, document_id, "Fertig")
         )
         postgres_connection.commit()
     
     # Delete the document
     with postgres_connection.cursor() as cursor:
-        cursor.execute("DELETE FROM dokument WHERE id = %s", (document_id,))
+        cursor.execute("DELETE FROM Dokument WHERE dokument_id = %s", (document_id,))
         postgres_connection.commit()
     
-    # Verify both jobs were deleted
+    # Verify the jobs were also deleted
     with postgres_connection.cursor() as cursor:
-        cursor.execute("SELECT COUNT(*) FROM extraction_job WHERE dokument_id = %s", (document_id,))
+        cursor.execute("SELECT COUNT(*) FROM Extraktionsauftrag WHERE dokument_id = %s", (document_id,))
         result = cursor.fetchone()
     
-    assert result[0] == 0
+    assert result[0] == 0  # No jobs should remain
 
 
 def test_can_retrieve_document_with_its_extraction_jobs(postgres_connection):
@@ -247,36 +246,36 @@ def test_can_retrieve_document_with_its_extraction_jobs(postgres_connection):
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             """
-            INSERT INTO dokument (
-                id, blob_path, mime_type, hash_sha256, source_filename, 
-                document_type, textextraction_status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO Dokument (
+                dokument_id, pfad_dms, dokumententyp, hash_sha256, quelle_dateiname, 
+                textextraktion_status
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             """,
-            (document_id, "raw/test.pdf", "application/pdf", "a" * 64, "test.pdf", 
-             "Kreditantrag", "not ready")
+            (document_id, "raw/test.pdf", "Kreditantrag", "a" * 64, "test.pdf", 
+             "nicht bereit")
         )
         cursor.execute(
-            "INSERT INTO extraction_job (id, dokument_id, state) VALUES (%s, %s, %s), (%s, %s, %s)",
-            (job_id_1, document_id, "PENDING", job_id_2, document_id, "SUCCESS")
+            "INSERT INTO Extraktionsauftrag (auftrag_id, dokument_id, status) VALUES (%s, %s, %s), (%s, %s, %s)",
+            (job_id_1, document_id, "Extraktion ausstehend", job_id_2, document_id, "Fertig")
         )
         postgres_connection.commit()
     
     # Retrieve document with jobs
     with postgres_connection.cursor() as cursor:
         cursor.execute("""
-            SELECT d.id, d.blob_path, d.textextraction_status, 
-                   e.id as job_id, e.state, e.created_at
-            FROM dokument d
-            LEFT JOIN extraction_job e ON d.id = e.dokument_id
-            WHERE d.id = %s
-            ORDER BY e.created_at
+            SELECT d.dokument_id, d.pfad_dms, d.textextraktion_status, 
+                   e.auftrag_id as job_id, e.status, e.erstellt_am
+            FROM Dokument d
+            LEFT JOIN Extraktionsauftrag e ON d.dokument_id = e.dokument_id
+            WHERE d.dokument_id = %s
+            ORDER BY e.erstellt_am
         """, (document_id,))
         results = cursor.fetchall()
     
     assert len(results) == 2  # One document with two jobs
     assert results[0][0] == document_id  # Document ID
     assert results[0][1] == "raw/test.pdf"  # Blob path
-    assert results[0][2] == "not ready"  # Text extraction status
+    assert results[0][2] == "nicht bereit"  # Text extraction status
     assert results[0][3] in [job_id_1, job_id_2]  # Job ID
     assert results[1][3] in [job_id_1, job_id_2]  # Other job ID
 
@@ -307,10 +306,9 @@ def test_can_upload_credit_request_pdf_to_dms(dms_mock_environment):
     assert document["id"] == document_id
     assert document["blob_path"].startswith("raw/Kreditantrag/")
     assert document["blob_path"].endswith(".pdf")
-    assert document["mime_type"] == "application/pdf"
-    assert document["textextraction_status"] == "not ready"
-    assert document["source_filename"] == "credit_application_form.pdf"
     assert document["document_type"] == "Kreditantrag"
+    assert document["textextraction_status"] == "nicht bereit"
+    assert document["source_filename"] == "credit_application_form.pdf"
     assert document["linked_entity"] == "KREDITANTRAG"
     assert document["linked_entity_id"] == "12345"
     assert len(document["hash_sha256"]) == 64  # SHA256 hash is 64 characters
@@ -335,17 +333,17 @@ def test_can_upload_credit_request_pdf_to_dms(dms_mock_environment):
     assert uploaded_doc["blob_path"] == document["blob_path"]
     
     # Test text extraction status updates
-    assert dms_service.update_textextraction_status(document_id, "ready")
+    assert dms_service.update_textextraction_status(document_id, "bereit")
     updated_document = dms_service.get_document(document_id)
-    assert updated_document["textextraction_status"] == "ready"
+    assert updated_document["textextraction_status"] == "bereit"
     
     # Test extraction job creation and management
-    job_id = dms_service.create_extraction_job(document_id, "PENDING")
+    job_id = dms_service.create_extraction_job(document_id, "Extraktion ausstehend")
     assert job_id is not None
     
     # Update job status
-    assert dms_service.update_extraction_job(job_id, "RUNNING", "Processing document...")
-    assert dms_service.update_extraction_job(job_id, "SUCCESS", "Extraction completed successfully")
+    assert dms_service.update_extraction_job(job_id, "OCR abgeschlossen", "Processing document...")
+    assert dms_service.update_extraction_job(job_id, "Fertig", "Extraction completed successfully")
     
     # Get extraction jobs for the document
     jobs = dms_service.get_extraction_jobs(document_id)
@@ -354,7 +352,7 @@ def test_can_upload_credit_request_pdf_to_dms(dms_mock_environment):
     # Find our job
     our_job = next((job for job in jobs if job["id"] == job_id), None)
     assert our_job is not None
-    assert our_job["state"] == "SUCCESS"
+    assert our_job["state"] == "Fertig"
     assert our_job["worker_log"] == "Extraction completed successfully"
     assert our_job["finished_at"] is not None
 
@@ -385,10 +383,9 @@ def test_can_upload_credit_request_pdf_to_dms_with_path(dms_mock_environment):
     assert document["id"] == document_id
     assert document["blob_path"].startswith("raw/Kreditantrag/")
     assert document["blob_path"].endswith(".pdf")
-    assert document["mime_type"] == "application/pdf"
-    assert document["textextraction_status"] == "not ready"
-    assert document["source_filename"] == "credit_request_form.pdf"
     assert document["document_type"] == "Kreditantrag"
+    assert document["textextraction_status"] == "nicht bereit"
+    assert document["source_filename"] == "credit_request_form.pdf"
     assert document["linked_entity"] == "KREDITANTRAG"
     assert document["linked_entity_id"] == "67890"
     assert len(document["hash_sha256"]) == 64  # SHA256 hash is 64 characters
