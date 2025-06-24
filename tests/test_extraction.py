@@ -44,7 +44,7 @@ def setup_database_env(dms_mock_environment):
 @pytest.fixture
 def llm_client():
     """Create a test LLM client."""
-    app_config = AppConfig("tests/resources/test_application.conf")
+    app_config = AppConfig("config")
     return OllamaClient(
         base_url=app_config.generative_llm.url,
         model_name=app_config.generative_llm.model_name

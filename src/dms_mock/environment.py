@@ -13,8 +13,12 @@ import psycopg2
 from azure.storage.blob import BlobServiceClient
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
+from src.config import AppConfig
 
 logger = logging.getLogger(__name__)
+
+# Load configuration
+app_config = AppConfig()
 
 class DmsMockEnvironment:
     """Manages DMS mock environment with PostgreSQL and Azurite."""
@@ -40,9 +44,9 @@ class DmsMockEnvironment:
             # Start PostgreSQL with random port
             self.postgres_container = (
                 DockerContainer("postgres:15-alpine")
-                .with_env("POSTGRES_DB", "dms_meta")
-                .with_env("POSTGRES_USER", "dms")
-                .with_env("POSTGRES_PASSWORD", "dms")
+                .with_env("POSTGRES_DB", app_config.database.name)
+                .with_env("POSTGRES_USER", app_config.database.user)
+                .with_env("POSTGRES_PASSWORD", app_config.database.password)
                 .with_bind_ports(5432, None)  # Use random port
                 .with_name("dms-postgres")
             )
@@ -74,8 +78,8 @@ class DmsMockEnvironment:
             # Set environment variable for all code to use the same Azurite instance
             connection_string = (
                 "DefaultEndpointsProtocol=http;"
-                "AccountName=devstoreaccount1;"
-                "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+                f"AccountName={app_config.azure.storage.account_name};"
+                f"AccountKey={app_config.azure.storage.account_key};"
                 f"BlobEndpoint=http://localhost:{self.azurite_port}/devstoreaccount1;"
             )
             os.environ["AZURE_STORAGE_CONNECTION_STRING"] = connection_string
@@ -155,9 +159,9 @@ class DmsMockEnvironment:
         self.postgres_connection = psycopg2.connect(
             host="localhost",
             port=self.postgres_port,
-            database="dms_meta",
-            user="dms",
-            password="dms"
+            database=app_config.database.name,
+            user=app_config.database.user,
+            password=app_config.database.password
         )
         
         # Execute schema
@@ -172,15 +176,15 @@ class DmsMockEnvironment:
         """Initialize blob storage client."""
         connection_string = (
             "DefaultEndpointsProtocol=http;"
-            "AccountName=devstoreaccount1;"
-            "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+            f"AccountName={app_config.azure.storage.account_name};"
+            f"AccountKey={app_config.azure.storage.account_key};"
             f"BlobEndpoint=http://localhost:{self.azurite_port}/devstoreaccount1;"
         )
         
         self.blob_service_client = BlobServiceClient.from_connection_string(connection_string)
         
         # Create default container
-        container_client = self.blob_service_client.get_container_client("documents")
+        container_client = self.blob_service_client.get_container_client(app_config.azure.storage.container_name)
         try:
             container_client.create_container()
         except Exception:

@@ -1,19 +1,18 @@
 import json
 import pytest
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 import logging
 import asyncio
 
 from src.llm.client import OllamaClient
 from src.llm.field_extractor import extract_fields_with_llm, validate_field, load_document_config
 from src.config import AppConfig, DocumentTypeConfig
-from tests.environment.environment import app_config
 
 logger = logging.getLogger(__name__)
 
-# Load test configuration
-app_config = AppConfig("tests/resources/test_application.conf")
+# Load configuration
+app_config = AppConfig("config")
 
 @pytest.fixture
 def llm_client():
