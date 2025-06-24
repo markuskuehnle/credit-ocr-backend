@@ -103,7 +103,7 @@ class DmsMockEnvironment:
             raise
     
     def stop(self) -> None:
-        """Stop all containers."""
+        """Stop and remove all containers."""
         logger.info("Stopping DMS mock environment")
         
         # Close database connection
@@ -116,22 +116,28 @@ class DmsMockEnvironment:
             finally:
                 self.postgres_connection = None
         
-        # Stop containers
+        # Stop and remove containers
         if self.azurite_container:
             try:
                 self.azurite_container.stop()
-                logger.info("Stopped Azurite container")
+                # Remove the container using the underlying Docker container object
+                if hasattr(self.azurite_container, '_container') and self.azurite_container._container:
+                    self.azurite_container._container.remove()
+                logger.info("Stopped and removed Azurite container")
             except Exception as e:
-                logger.warning(f"Failed to stop Azurite container: {e}")
+                logger.warning(f"Failed to stop/remove Azurite container: {e}")
             finally:
                 self.azurite_container = None
         
         if self.postgres_container:
             try:
                 self.postgres_container.stop()
-                logger.info("Stopped PostgreSQL container")
+                # Remove the container using the underlying Docker container object
+                if hasattr(self.postgres_container, '_container') and self.postgres_container._container:
+                    self.postgres_container._container.remove()
+                logger.info("Stopped and removed PostgreSQL container")
             except Exception as e:
-                logger.warning(f"Failed to stop PostgreSQL container: {e}")
+                logger.warning(f"Failed to stop/remove PostgreSQL container: {e}")
             finally:
                 self.postgres_container = None
         

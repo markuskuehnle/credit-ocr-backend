@@ -27,6 +27,7 @@ MODEL_CHECK_CACHE = {"generative": None, "embedding": None}
 
 # Global container tracking for cleanup
 _active_containers = []
+_global_dms_environment = None  # Store the global DMS environment
 
 
 def cleanup_all_containers():
@@ -43,6 +44,13 @@ def cleanup_all_containers():
                             logger.info(f"Stopped container: {container}")
                         else:
                             logger.info(f"Container already stopped: {container}")
+                        
+                        # Remove the container after stopping
+                        try:
+                            container._container.remove()
+                            logger.info(f"Removed container: {container}")
+                        except Exception as e:
+                            logger.debug(f"Could not remove container {container}: {e}")
                     except Exception:
                         # Container might not exist anymore, which is fine
                         logger.debug(f"Container no longer exists: {container}")
@@ -232,12 +240,15 @@ def setup(request):
 @pytest.fixture(scope="session", autouse=True)
 def test_environment():
     """Start DMS mock (Postgres + Azurite), Redis, and Ollama before any test runs. Set env vars. Cleanup after session."""
+    global _global_dms_environment
+    
     # Clean up any existing containers first
     cleanup_existing_containers()
     
     logger.info("[conftest] Starting DMS mock environment (Postgres + Azurite)")
     dms_env = DmsMockEnvironment()
     dms_env.start()
+    _global_dms_environment = dms_env  # Store globally
 
     # Set DB env vars
     os.environ["POSTGRES_HOST"] = "localhost"
@@ -274,9 +285,26 @@ def test_environment():
 
     # Cleanup
     logger.info("[conftest] Stopping Ollama, Redis, and DMS mock environment")
-    ollama_container.stop()
-    redis_container.stop()
+    try:
+        ollama_container.stop()
+        # Remove the container using the underlying Docker container object
+        if hasattr(ollama_container, '_container') and ollama_container._container:
+            ollama_container._container.remove()
+        logger.info("Stopped and removed Ollama container")
+    except Exception as e:
+        logger.warning(f"Failed to stop/remove Ollama container: {e}")
+    
+    try:
+        redis_container.stop()
+        # Remove the container using the underlying Docker container object
+        if hasattr(redis_container, '_container') and redis_container._container:
+            redis_container._container.remove()
+        logger.info("Stopped and removed Redis container")
+    except Exception as e:
+        logger.warning(f"Failed to stop/remove Redis container: {e}")
+    
     dms_env.stop()
+    _global_dms_environment = None  # Clear global reference
 
 
 # Session finish hook to print available models
@@ -330,10 +358,19 @@ def app_config():
 
 @pytest.fixture(scope="session")
 def document_config():
-    """Load document configuration for testing."""
-    config_path = Path("config/document_types.conf")
-    assert config_path.exists(), f"Configuration file not found: {config_path}"
-    with open(config_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    """Provide document configuration for tests."""
+    return app_config.document_types
+
+
+@pytest.fixture(scope="session")
+def dms_mock_environment():
+    """Provide DMS mock environment for tests that need it."""
+    global _global_dms_environment
+    
+    if _global_dms_environment is None:
+        raise RuntimeError("DMS mock environment not available. Make sure test_environment fixture runs first.")
+    
+    # Return the global environment that's already started
+    yield _global_dms_environment
 
 test_document_id = str(uuid.uuid4())
