@@ -6,6 +6,8 @@ The Credit Document OCR System represents a sophisticated solution that signific
 
 A sophisticated backend system for automated credit request document processing using OCR, LLM extraction, and intelligent field mapping. This system processes credit application documents, extracts relevant information using AI, and provides structured data output with confidence scoring.
 
+![OCR System Credit Evaluation](docs/imgs/ocr_system_credit_evaluation.png)
+
 ## Design Log
 
 ### Key Assumptions
