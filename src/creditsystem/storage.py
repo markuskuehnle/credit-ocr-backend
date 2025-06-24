@@ -14,8 +14,12 @@ import logging
 
 from azure.storage.blob import BlobServiceClient, BlobClient
 from azure.core.exceptions import ResourceExistsError
+from src.config import AppConfig
 
 logger = logging.getLogger(__name__)
+
+# Load configuration
+app_config = AppConfig()
 
 
 class Stage(Enum):
@@ -34,26 +38,18 @@ class BlobStorage:
     _lock = threading.Lock()
     
     def __new__(cls):
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = super().__new__(cls)
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
         return cls._instance
     
     def __init__(self):
         if hasattr(self, '_initialized'):
             return
         
-        # Get connection string from environment or default to Azurite
-        self.connection_string = os.getenv(
-            'AZURE_STORAGE_CONNECTION_STRING',
-            'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;'
-            'AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;'
-            'BlobEndpoint=http://localhost:10000/devstoreaccount1;'
-        )
-        
-        # Initialize blob service client
-        self.blob_service_client = BlobServiceClient.from_connection_string(self.connection_string)
+        # Initialize without connection string - will be loaded on first use
+        self._connection_string = None
+        self._blob_service_client = None
         
         # Track initialized containers
         self._initialized_containers = set()
@@ -61,6 +57,23 @@ class BlobStorage:
         
         self._initialized = True
         logger.info("BlobStorage initialized with multiple containers")
+    
+    @property
+    def connection_string(self) -> str:
+        """Get connection string from environment first, then fall back to configuration."""
+        if self._connection_string is None:
+            self._connection_string = os.getenv(
+                'AZURE_STORAGE_CONNECTION_STRING',
+                app_config.azure.storage.connection_string
+            )
+        return self._connection_string
+    
+    @property
+    def blob_service_client(self) -> BlobServiceClient:
+        """Get blob service client, initializing if needed."""
+        if self._blob_service_client is None:
+            self._blob_service_client = BlobServiceClient.from_connection_string(self.connection_string)
+        return self._blob_service_client
     
     def _ensure_container_exists(self, container_name: str) -> None:
         """Ensure a specific container exists."""

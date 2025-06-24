@@ -299,8 +299,7 @@ def pytest_sessionfinish(session: PytestConfig, exitstatus: int):
 @pytest.fixture(scope="session")
 def app_config():
     """Provide application configuration for tests."""
-    config_path = Path("tests/resources/test_application.conf")
-    return AppConfig(str(config_path))
+    return AppConfig("config")
 
 
 @pytest.fixture(scope="session")

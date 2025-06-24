@@ -7,6 +7,7 @@ import tempfile
 import asyncio
 import psycopg2
 import os
+from datetime import datetime
 
 from src.creditsystem.storage import get_storage, Stage
 from src.ocr.storage import write_ocr_results_to_bucket, read_ocr_results_from_bucket
@@ -18,17 +19,20 @@ from src.config import DocumentProcessingConfig, AppConfig
 
 logger = logging.getLogger(__name__)
 
+# Load configuration
+app_config = AppConfig()
+
 
 def _get_database_connection():
     """Get database connection for status updates."""
-    # Try to get connection details from environment (DMS mock)
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    port = os.getenv("POSTGRES_PORT", "5432")
-    database = os.getenv("POSTGRES_DB", "dms_meta")
-    user = os.getenv("POSTGRES_USER", "dms")
-    password = os.getenv("POSTGRES_PASSWORD", "dms")
-    
     try:
+        # Check for environment variables first, then fall back to configuration
+        host = os.getenv('POSTGRES_HOST', app_config.database.host)
+        port = int(os.getenv('POSTGRES_PORT', app_config.database.port))
+        database = os.getenv('POSTGRES_DB', app_config.database.name)
+        user = os.getenv('POSTGRES_USER', app_config.database.user)
+        password = os.getenv('POSTGRES_PASSWORD', app_config.database.password)
+        
         connection = psycopg2.connect(
             host=host,
             port=port,
@@ -234,7 +238,6 @@ async def run_llm_extraction(document_id: str) -> Dict[str, Any]:
     
     # Create LLM client using configuration
     from src.llm.client import OllamaClient
-    app_config = AppConfig("tests/resources/test_application.conf")
     llm_client = OllamaClient(
         base_url=app_config.generative_llm.url,
         model_name=app_config.generative_llm.model_name
@@ -473,7 +476,6 @@ def _update_extraction_job_status(document_id: str, status: str) -> None:
 
 def _get_current_timestamp() -> str:
     """Get current timestamp as string."""
-    from datetime import datetime
     return datetime.now().isoformat()
 
 

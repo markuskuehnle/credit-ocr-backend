@@ -1,6 +1,12 @@
+import os
+import time
+import requests
 import logging
 import sys
 from pathlib import Path
+from testcontainers.core.container import DockerContainer
+from testcontainers.core.waiting_utils import wait_for_logs
+from src.config import AppConfig
 
 from tests.environment.ollama import start_ollama
 
@@ -9,9 +15,8 @@ logging.basicConfig(stream=sys.stdout, format=FORMAT, level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
-from src.config import AppConfig
-
-app_config = AppConfig("tests/resources/test_application.conf")
+# Load configuration
+app_config = AppConfig("config")
 
 curr_dir = str(Path(__file__).parent)
 

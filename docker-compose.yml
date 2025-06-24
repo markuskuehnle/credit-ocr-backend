@@ -19,6 +19,30 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11435:11435"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11435/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:latest
     container_name: azurite-blob-storages
@@ -35,4 +59,5 @@ services:
 
 volumes:
   pgdata:
-  azdata: 
+  azdata:
+  ollama_data: 
