@@ -52,7 +52,7 @@ def trigger_extraction(document_id: str) -> str:
     Trigger document extraction process.
     
     Fetches metadata from DMS, saves original PDF to raw bucket,
-    and creates extraction job entry with pending status.
+    creates document record in database, and creates extraction job entry with pending status.
     
     Args:
         document_id: Unique identifier for the document
@@ -77,6 +77,9 @@ def trigger_extraction(document_id: str) -> str:
         data=pdf_data,
         overwrite=True
     )
+    
+    # Create document record in the Dokument table
+    _create_document_record(document_id, document_metadata)
     
     # Create extraction job entry with pending status
     extraction_job = {
@@ -641,6 +644,38 @@ def update_document_status(document_id: str, status: str, error_message: Optiona
             logger.info(f"Updated document status: {document_id} -> {status}")
     except Exception as e:
         logger.error(f"Failed to update document status: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+
+def _create_document_record(document_id: str, document_metadata: Dict[str, Any]) -> None:
+    """Create document record in the Dokument table."""
+    conn = _get_database_connection()
+    if not conn:
+        logger.warning("Database connection not available, skipping document record creation")
+        return
+    
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO Dokument (
+                    dokument_id, dokumententyp, pfad_dms, hash_sha256, quelle_dateiname, 
+                    textextraktion_status
+                ) VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (dokument_id) DO NOTHING
+            """, (
+                document_id, 
+                "Kreditantrag",  # dokumententyp
+                f"raw/{document_id}.pdf",  # pfad_dms
+                "a" * 64,  # hash_sha256 - placeholder
+                f"{document_id}.pdf",  # quelle_dateiname
+                "nicht bereit"  # textextraktion_status
+            ))
+            conn.commit()
+            logger.info(f"Created document record for document {document_id}")
+    except Exception as e:
+        logger.error(f"Failed to create document record for document {document_id}: {e}")
         conn.rollback()
     finally:
         conn.close() 
