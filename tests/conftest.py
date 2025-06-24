@@ -8,6 +8,10 @@ import time
 import os
 import re
 import uuid
+from testcontainers.redis import RedisContainer
+from testcontainers.core.container import DockerContainer
+from src.dms_mock.environment import DmsMockEnvironment
+import subprocess
 
 from _pytest.config import Config as PytestConfig
 from src.config import AppConfig
@@ -186,6 +190,25 @@ def _upload_test_documents():
         logger.info(f"Uploaded LLM results for {first_doc_id} to LLM stage")
 
 
+def cleanup_existing_containers():
+    """Clean up any existing containers with old naming patterns."""
+    try:
+        # Remove containers with old naming patterns
+        old_containers = ["dms-postgres", "azurite-blob-storages"]
+        for container_name in old_containers:
+            try:
+                subprocess.run(
+                    ["docker", "rm", "-f", container_name],
+                    capture_output=True,
+                    check=False
+                )
+                logger.info(f"Cleaned up old container: {container_name}")
+            except Exception as e:
+                logger.debug(f"Could not clean up container {container_name}: {e}")
+    except Exception as e:
+        logger.warning(f"Failed to cleanup existing containers: {e}")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def setup(request):
     """Global test setup - only runs for tests that need Ollama."""
@@ -207,50 +230,53 @@ def setup(request):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def dms_mock_environment():
-    """Provide DMS mock environment for all tests (includes Azurite for blob storage)."""
-    from src.dms_mock.environment import DmsMockEnvironment
+def test_environment():
+    """Start DMS mock (Postgres + Azurite), Redis, and Ollama before any test runs. Set env vars. Cleanup after session."""
+    # Clean up any existing containers first
+    cleanup_existing_containers()
     
-    logger.info("Starting DMS mock environment (Postgres + Azurite)")
-    dms_environment = DmsMockEnvironment()
-    dms_environment.start()
-    _active_containers.extend([dms_environment.postgres_container, dms_environment.azurite_container])
-    
-    # Set database environment variables globally for all tests
+    logger.info("[conftest] Starting DMS mock environment (Postgres + Azurite)")
+    dms_env = DmsMockEnvironment()
+    dms_env.start()
+
+    # Set DB env vars
     os.environ["POSTGRES_HOST"] = "localhost"
-    os.environ["POSTGRES_PORT"] = str(dms_environment.postgres_port)
+    os.environ["POSTGRES_PORT"] = str(dms_env.postgres_port)
     os.environ["POSTGRES_DB"] = "dms_meta"
     os.environ["POSTGRES_USER"] = "dms"
     os.environ["POSTGRES_PASSWORD"] = "dms"
-    
-    logger.info(f"Set database environment variables - Host: localhost, Port: {dms_environment.postgres_port}")
-    
-    # Wait for Azurite to be ready before creating containers
-    if not wait_for_azurite_ready():
-        raise RuntimeError("Azurite failed to start properly")
-    
-    # Ensure credit-docs container is created in Azurite
-    logger.info("Initializing credit-docs containers in Azurite")
-    from src.creditsystem.storage import ensure_all_credit_docs_containers
-    ensure_all_credit_docs_containers()
-    
-    # Upload test documents to blob storage
-    logger.info("Uploading test documents to blob storage")
-    _upload_test_documents()
-    
-    yield dms_environment
-    
-    logger.info("Cleaning up DMS mock environment")
-    dms_environment.stop()
-    # Remove from active containers list
-    if dms_environment.postgres_container in _active_containers:
-        _active_containers.remove(dms_environment.postgres_container)
-    if dms_environment.azurite_container in _active_containers:
-        _active_containers.remove(dms_environment.azurite_container)
-    
-    # Clean up environment variables
-    for var in ["POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"]:
-        os.environ.pop(var, None)
+
+    # Set Azurite env var
+    azurite_port = dms_env.azurite_port
+    os.environ["AZURE_STORAGE_CONNECTION_STRING"] = (
+        f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:{azurite_port}/devstoreaccount1;"
+    )
+    logger.info(f"[conftest] Set AZURE_STORAGE_CONNECTION_STRING with port {azurite_port}")
+
+    # Start Redis
+    logger.info("[conftest] Starting Redis test container")
+    redis_container = RedisContainer()
+    redis_container.start()
+    redis_port = redis_container.get_exposed_port(6379)
+    os.environ["REDIS_HOST"] = "localhost"
+    os.environ["REDIS_PORT"] = str(redis_port)
+
+    # Start Ollama
+    logger.info("[conftest] Starting Ollama test container")
+    ollama_container = DockerContainer("ollama/ollama:latest")
+    ollama_container.with_exposed_ports(11435)
+    ollama_container.start()
+    ollama_port = ollama_container.get_exposed_port(11435)
+    os.environ["OLLAMA_HOST"] = "localhost"
+    os.environ["OLLAMA_PORT"] = str(ollama_port)
+
+    yield  # Run tests
+
+    # Cleanup
+    logger.info("[conftest] Stopping Ollama, Redis, and DMS mock environment")
+    ollama_container.stop()
+    redis_container.stop()
+    dms_env.stop()
 
 
 # Session finish hook to print available models

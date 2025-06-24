@@ -515,4 +515,132 @@ def save_extracted_field(document_id: str, field_name: str, value: str, position
     except Exception as e:
         logger.error(f"Failed to save extracted field '{field_name}' for document {document_id}: {e}")
     finally:
-        connection.close() 
+        connection.close()
+
+
+def store_document_metadata(document_id: str, credit_request_id: str, filename: str, document_type: str, status: str) -> None:
+    """Store document metadata in the database."""
+    conn = _get_database_connection()
+    if not conn:
+        logger.error("Failed to get database connection for storing document metadata")
+        return
+    
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO documents (document_id, credit_request_id, filename, document_type, status, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, NOW(), NOW())
+                ON CONFLICT (document_id) DO UPDATE SET
+                    filename = EXCLUDED.filename,
+                    document_type = EXCLUDED.document_type,
+                    status = EXCLUDED.status,
+                    updated_at = NOW()
+            """, (document_id, credit_request_id, filename, document_type, status))
+            conn.commit()
+            logger.info(f"Stored document metadata: {document_id}")
+    except Exception as e:
+        logger.error(f"Failed to store document metadata: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+
+def get_documents_for_credit_request(credit_request_id: str) -> List[dict]:
+    """Get all documents for a credit request with their status."""
+    conn = _get_database_connection()
+    if not conn:
+        logger.error("Failed to get database connection for retrieving documents")
+        return []
+    
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT document_id, filename, document_type, status, error_message, created_at, updated_at
+                FROM documents
+                WHERE credit_request_id = %s
+                ORDER BY created_at DESC
+            """, (credit_request_id,))
+            
+            documents = []
+            for row in cursor.fetchall():
+                documents.append({
+                    "document_id": row[0],
+                    "filename": row[1],
+                    "document_type": row[2],
+                    "status": row[3],
+                    "error_message": row[4],
+                    "created_at": row[5].isoformat() if row[5] else None,
+                    "updated_at": row[6].isoformat() if row[6] else None
+                })
+            
+            return documents
+    except Exception as e:
+        logger.error(f"Failed to get documents for credit request {credit_request_id}: {e}")
+        return []
+    finally:
+        conn.close()
+
+
+def get_document_status(document_id: str) -> Optional[dict]:
+    """Get document status and error information."""
+    conn = _get_database_connection()
+    if not conn:
+        logger.error("Failed to get database connection for retrieving document status")
+        return None
+    
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT document_id, credit_request_id, filename, document_type, status, error_message, created_at, updated_at
+                FROM documents
+                WHERE document_id = %s
+            """, (document_id,))
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "document_id": row[0],
+                    "credit_request_id": row[1],
+                    "filename": row[2],
+                    "document_type": row[3],
+                    "status": row[4],
+                    "error_message": row[5],
+                    "created_at": row[6].isoformat() if row[6] else None,
+                    "updated_at": row[7].isoformat() if row[7] else None
+                }
+            return None
+    except Exception as e:
+        logger.error(f"Failed to get document status for {document_id}: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def update_document_status(document_id: str, status: str, error_message: Optional[str] = None) -> None:
+    """Update document status in the database."""
+    conn = _get_database_connection()
+    if not conn:
+        logger.error("Failed to get database connection for updating document status")
+        return
+    
+    try:
+        with conn.cursor() as cursor:
+            if error_message:
+                cursor.execute("""
+                    UPDATE documents
+                    SET status = %s, error_message = %s, updated_at = NOW()
+                    WHERE document_id = %s
+                """, (status, error_message, document_id))
+            else:
+                cursor.execute("""
+                    UPDATE documents
+                    SET status = %s, error_message = NULL, updated_at = NOW()
+                    WHERE document_id = %s
+                """, (status, document_id))
+            conn.commit()
+            logger.info(f"Updated document status: {document_id} -> {status}")
+    except Exception as e:
+        logger.error(f"Failed to update document status: {e}")
+        conn.rollback()
+    finally:
+        conn.close() 
