@@ -13,6 +13,7 @@ from datetime import datetime
 import tempfile
 import fcntl
 import time
+import psutil
 
 from src.config import AppConfig
 from src.creditsystem.storage import get_storage, Stage
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Global flag to track if DMS environment is already started
 _dms_environment_started = False
+_should_cleanup_containers = False  # Track if we should clean up containers on shutdown
 dms_environment = None
 _lock_file = None
 
@@ -145,6 +147,7 @@ async def startup_event():
                 
                 logger.info(f"Using existing DMS environment - PostgreSQL: {postgres_port}, Azurite: {azurite_port}")
                 _dms_environment_started = True
+                # Don't set cleanup flag since we didn't create these containers
                 return
         
         # Start new DMS mock environment only if no existing containers found
@@ -165,6 +168,7 @@ async def startup_event():
         
         logger.info(f"DMS mock environment started - PostgreSQL: {dms_environment.postgres_port}, Azurite: {dms_environment.azurite_port}")
         _dms_environment_started = True
+        _should_cleanup_containers = True  # We created these containers, so we should clean them up
         
     except Exception as e:
         logger.error(f"Failed to start DMS mock environment: {e}")
@@ -174,14 +178,64 @@ async def startup_event():
         # Always release the lock
         _release_startup_lock()
 
+def _cleanup_orphaned_containers():
+    """Clean up orphaned DMS containers if no other instances are running."""
+    try:
+        import docker
+        
+        # Check if other Python processes are running our API
+        other_api_instances = 0
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                if proc.info['name'] == 'python' and proc.info['cmdline']:
+                    cmdline = ' '.join(proc.info['cmdline'])
+                    if 'run.py' in cmdline or 'api.main:app' in cmdline:
+                        if proc.pid != os.getpid():  # Don't count ourselves
+                            other_api_instances += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        
+        if other_api_instances > 0:
+            logger.info(f"Found {other_api_instances} other API instances running, skipping container cleanup")
+            return
+        
+        # No other instances running, safe to clean up containers
+        client = docker.from_env()
+        containers = client.containers.list(filters={"status": "running"})
+        
+        dms_containers = []
+        for container in containers:
+            if "dms-postgres" in container.name or "azurite-blob" in container.name:
+                dms_containers.append(container)
+        
+        if dms_containers:
+            logger.info(f"Found {len(dms_containers)} orphaned DMS containers, cleaning up...")
+            for container in dms_containers:
+                try:
+                    logger.info(f"Stopping and removing container: {container.name}")
+                    container.stop()
+                    container.remove()
+                except Exception as e:
+                    logger.warning(f"Failed to clean up container {container.name}: {e}")
+    except Exception as e:
+        logger.warning(f"Could not clean up orphaned containers: {e}")
+
 # Global cleanup function for external use
 def cleanup_dms_environment():
     """Cleanup function that can be called from main script."""
-    global dms_environment, _dms_environment_started
-    if dms_environment:
+    global dms_environment, _dms_environment_started, _should_cleanup_containers
+    
+    if dms_environment and _should_cleanup_containers:
         logger.info("Stopping DMS mock environment")
         dms_environment.stop()
         dms_environment = None
+        _dms_environment_started = False
+        _should_cleanup_containers = False
+    elif _dms_environment_started and not _should_cleanup_containers:
+        # We were using existing containers, check if we should clean them up
+        # Only clean up if no other instances are running
+        logger.info("Checking for orphaned containers...")
+        _cleanup_orphaned_containers()
         _dms_environment_started = False
     
     # Release startup lock
