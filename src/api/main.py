@@ -9,6 +9,10 @@ import logging
 import os
 import uuid
 from pathlib import Path
+from datetime import datetime
+import tempfile
+import fcntl
+import time
 
 from src.config import AppConfig
 from src.creditsystem.storage import get_storage, Stage
@@ -18,6 +22,11 @@ from src.dms_mock.environment import DmsMockEnvironment
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Global flag to track if DMS environment is already started
+_dms_environment_started = False
+dms_environment = None
+_lock_file = None
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -32,45 +41,156 @@ app_config = AppConfig()
 # Initialize storage
 storage = get_storage()
 
-# Initialize DMS mock environment (for development)
-dms_environment = None
+def _acquire_startup_lock():
+    """Acquire a file lock to prevent multiple instances from starting DMS environment."""
+    global _lock_file
+    try:
+        lock_path = Path(tempfile.gettempdir()) / "credit_ocr_dms_startup.lock"
+        _lock_file = open(lock_path, 'w')
+        fcntl.flock(_lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        logger.info("Acquired startup lock")
+        return True
+    except (IOError, OSError) as e:
+        logger.warning(f"Could not acquire startup lock: {e}")
+        return False
+
+def _release_startup_lock():
+    """Release the startup lock."""
+    global _lock_file
+    if _lock_file:
+        try:
+            fcntl.flock(_lock_file.fileno(), fcntl.LOCK_UN)
+            _lock_file.close()
+            logger.info("Released startup lock")
+        except Exception as e:
+            logger.warning(f"Error releasing startup lock: {e}")
+        finally:
+            _lock_file = None
+
+def _check_existing_containers():
+    """Check if DMS containers are already running and return their info."""
+    import docker
+    try:
+        client = docker.from_env()
+        containers = client.containers.list(filters={"status": "running"})
+        
+        postgres_container = None
+        azurite_container = None
+        
+        for container in containers:
+            if "dms-postgres" in container.name:
+                postgres_container = container
+            elif "azurite-blob" in container.name:
+                azurite_container = container
+        
+        return postgres_container, azurite_container
+    except Exception as e:
+        logger.warning(f"Could not check existing containers: {e}")
+        return None, None
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize services on startup."""
-    global dms_environment
+    """Initialize the application on startup."""
+    global dms_environment, _dms_environment_started
     
     logger.info("Starting Credit OCR Demo Backend")
     
-    # Initialize DMS mock environment for development (but not in test mode)
-    if os.getenv("ENVIRONMENT", "development") == "development" and not os.getenv("TESTING"):
+    # Check if we're in test mode or production
+    if os.getenv("TESTING") == "1":
+        logger.info("Running in test mode - skipping DMS mock environment initialization")
+        return
+    
+    # Check if DMS environment is already started
+    if _dms_environment_started:
+        logger.info("DMS mock environment already started, skipping initialization")
+        return
+    
+    # Try to acquire startup lock to prevent multiple instances
+    if not _acquire_startup_lock():
+        logger.warning("Another instance is starting DMS environment, waiting...")
+        # Wait a bit and check again
+        time.sleep(2)
+        
+        # Check for existing containers again
+        postgres_container, azurite_container = _check_existing_containers()
+        if postgres_container and azurite_container:
+            logger.info("Found DMS containers started by another instance")
+            _dms_environment_started = True
+            return
+        else:
+            logger.error("Could not acquire lock and no existing containers found")
+            return
+    
+    try:
+        # Check for existing containers
+        postgres_container, azurite_container = _check_existing_containers()
+        
+        if postgres_container and azurite_container:
+            logger.info(f"Found existing DMS containers: {postgres_container.name}, {azurite_container.name}")
+            logger.info("Using existing containers instead of starting new ones")
+            
+            # Extract port information from existing containers
+            postgres_port = postgres_container.ports.get('5432/tcp', [{}])[0].get('HostPort')
+            azurite_port = azurite_container.ports.get('10000/tcp', [{}])[0].get('HostPort')
+            
+            if postgres_port and azurite_port:
+                # Set environment variable for existing Azurite
+                azure_connection_string = (
+                    "DefaultEndpointsProtocol=http;"
+                    "AccountName=devstoreaccount1;"
+                    "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+                    f"BlobEndpoint=http://localhost:{azurite_port}/devstoreaccount1;"
+                )
+                os.environ["AZURE_STORAGE_CONNECTION_STRING"] = azure_connection_string
+                
+                logger.info(f"Using existing DMS environment - PostgreSQL: {postgres_port}, Azurite: {azurite_port}")
+                _dms_environment_started = True
+                return
+        
+        # Start new DMS mock environment only if no existing containers found
         logger.info("Initializing DMS mock environment")
+        from src.dms_mock.environment import DmsMockEnvironment
+        
         dms_environment = DmsMockEnvironment()
         dms_environment.start()
         
-        # Set environment variables for the application
-        os.environ["POSTGRES_HOST"] = "localhost"
-        os.environ["POSTGRES_PORT"] = str(dms_environment.postgres_port)
-        os.environ["POSTGRES_DB"] = "dms_meta"
-        os.environ["POSTGRES_USER"] = "dms"
-        os.environ["POSTGRES_PASSWORD"] = "dms"
-        
-        # Set Azure storage connection string
-        azure_connection_string = f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:{dms_environment.azurite_port}/devstoreaccount1;"
+        # Set environment variable for Azurite connection
+        azure_connection_string = (
+            "DefaultEndpointsProtocol=http;"
+            "AccountName=devstoreaccount1;"
+            "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+            f"BlobEndpoint=http://localhost:{dms_environment.azurite_port}/devstoreaccount1;"
+        )
         os.environ["AZURE_STORAGE_CONNECTION_STRING"] = azure_connection_string
         
         logger.info(f"DMS mock environment started - PostgreSQL: {dms_environment.postgres_port}, Azurite: {dms_environment.azurite_port}")
-    else:
-        logger.info("Skipping DMS mock environment initialization (test mode or production)")
+        _dms_environment_started = True
+        
+    except Exception as e:
+        logger.error(f"Failed to start DMS mock environment: {e}")
+        dms_environment = None
+        raise
+    finally:
+        # Always release the lock
+        _release_startup_lock()
+
+# Global cleanup function for external use
+def cleanup_dms_environment():
+    """Cleanup function that can be called from main script."""
+    global dms_environment, _dms_environment_started
+    if dms_environment:
+        logger.info("Stopping DMS mock environment")
+        dms_environment.stop()
+        dms_environment = None
+        _dms_environment_started = False
+    
+    # Release startup lock
+    _release_startup_lock()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown."""
-    global dms_environment
-    
-    if dms_environment:
-        logger.info("Stopping DMS mock environment")
-        dms_environment.stop()
+    cleanup_dms_environment()
 
 # Health check endpoint
 @app.get("/health")

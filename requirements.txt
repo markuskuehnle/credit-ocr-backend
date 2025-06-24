@@ -1,0 +1,37 @@
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Azure dependencies
+azure-storage-blob==12.19.0
+azure-ai-formrecognizer==3.3.0
+
+# Database dependencies
+psycopg2-binary==2.9.9
+redis==5.0.1
+
+# Task queue
+celery==5.3.4
+
+# HTTP client
+httpx==0.25.2
+aiohttp==3.9.1
+
+# Configuration
+pyhocon==0.3.60
+
+# Testing
+pytest==8.4.0
+pytest-asyncio==0.21.1
+testcontainers==3.7.1
+pytest-ordering==0.6
+
+# PDF processing
+reportlab==4.0.7
+PyPDF2==3.0.1
+
+# Docker for container management
+docker==6.1.3 

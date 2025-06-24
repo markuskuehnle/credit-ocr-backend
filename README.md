@@ -152,7 +152,55 @@ ollama serve
 ollama pull llama3.2:3b
 ```
 
-### 5. Run Tests
+### 5. Start the API Server
+
+You have several options to start the API server:
+
+#### Option A: Using the shell script (recommended)
+```bash
+# Start on default port 8000
+./start.sh
+
+# Start on custom port
+./start.sh 8080
+```
+
+#### Option B: Using the Python script directly
+```bash
+# Start from project root
+python run.py
+
+# Start from src directory
+python src/main.py
+```
+
+#### Option C: Using uvicorn directly
+```bash
+# Start with default settings
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+
+# Start with reload for development
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+#### Environment Variables
+You can customize the server behavior with environment variables:
+```bash
+export HOST=0.0.0.0
+export PORT=8000
+export RELOAD=false
+export ENVIRONMENT=development
+```
+
+### 6. Access the API
+
+Once started, the API will be available at:
+- **API Base URL**: http://localhost:8000
+- **Health Check**: http://localhost:8000/health
+- **API Documentation**: http://localhost:8000/docs
+- **Alternative Docs**: http://localhost:8000/redoc
+
+### 7. Run Tests
 
 ```bash
 # Run all tests with optimized test runner
