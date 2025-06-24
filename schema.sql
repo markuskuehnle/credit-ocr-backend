@@ -12,6 +12,17 @@ CREATE TABLE Dokument (
     textextraktion_status VARCHAR DEFAULT 'nicht bereit' CHECK (textextraktion_status IN ('nicht bereit', 'bereit', 'in Bearbeitung', 'abgeschlossen', 'fehlerhaft'))
 );
 
+CREATE TABLE documents (
+    document_id        VARCHAR PRIMARY KEY,
+    credit_request_id  VARCHAR NOT NULL,
+    filename           VARCHAR NOT NULL,
+    document_type      VARCHAR NOT NULL,
+    status             VARCHAR NOT NULL DEFAULT 'Extraktion ausstehend',
+    error_message      TEXT,
+    created_at         TIMESTAMP DEFAULT now(),
+    updated_at         TIMESTAMP DEFAULT now()
+);
+
 CREATE TABLE Extraktionsauftrag (
     auftrag_id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     dokument_id        UUID REFERENCES Dokument(dokument_id) ON DELETE CASCADE,
@@ -35,4 +46,6 @@ CREATE TABLE ExtrahierteDaten (
 CREATE INDEX idx_extraktionsauftrag_dokument_id ON Extraktionsauftrag(dokument_id);
 CREATE INDEX idx_extraktionsauftrag_status ON Extraktionsauftrag(status);
 CREATE INDEX idx_extrahierte_daten_dokument_id ON ExtrahierteDaten(dokument_id);
-CREATE INDEX idx_extrahierte_daten_feldname ON ExtrahierteDaten(feldname); 
+CREATE INDEX idx_extrahierte_daten_feldname ON ExtrahierteDaten(feldname);
+CREATE INDEX idx_documents_credit_request_id ON documents(credit_request_id);
+CREATE INDEX idx_documents_status ON documents(status); 

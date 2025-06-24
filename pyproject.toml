@@ -24,7 +24,11 @@ dependencies = [
     "pymupdf>=1.26.1",
     "celery[redis]>=5.4.0",
     "redis>=5.0.7",
-    "testcontainers-redis==0.0.1rc1"
+    "testcontainers-redis==0.0.1rc1",
+    "fastapi>=0.112.0",
+    "uvicorn[standard]>=0.30.3",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27.0"
 ]
 requires-python = ">=3.10"
 readme = "README.md"

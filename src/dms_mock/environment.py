@@ -8,6 +8,8 @@ import os
 import time
 from pathlib import Path
 from typing import Optional
+import uuid
+from datetime import datetime
 
 import psycopg2
 from azure.storage.blob import BlobServiceClient
@@ -31,6 +33,12 @@ class DmsMockEnvironment:
         self.postgres_port = None
         self.azurite_port = None
         self._started = False
+        
+        # Generate unique container names to avoid conflicts
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = str(uuid.uuid4())[:8]
+        self.postgres_container_name = f"dms-postgres-{timestamp}-{unique_id}"
+        self.azurite_container_name = f"azurite-blob-{timestamp}-{unique_id}"
     
     def start(self) -> None:
         """Start PostgreSQL and Azurite containers."""
@@ -48,7 +56,7 @@ class DmsMockEnvironment:
                 .with_env("POSTGRES_USER", app_config.database.user)
                 .with_env("POSTGRES_PASSWORD", app_config.database.password)
                 .with_bind_ports(5432, None)  # Use random port
-                .with_name("dms-postgres")
+                .with_name(self.postgres_container_name)
             )
             self.postgres_container.start()
             
@@ -64,7 +72,7 @@ class DmsMockEnvironment:
                 DockerContainer("mcr.microsoft.com/azure-storage/azurite:latest")
                 .with_command(["azurite", "--location", "/data", "--blobHost", "0.0.0.0"])
                 .with_bind_ports(10000, None)  # Use random port
-                .with_name("azurite-blob-storages")
+                .with_name(self.azurite_container_name)
             )
             self.azurite_container.start()
             
