@@ -1,7 +1,3 @@
-"""
-FastAPI application for Credit OCR Demo Backend
-"""
-
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends
 from fastapi.responses import FileResponse, JSONResponse
 from typing import List, Optional

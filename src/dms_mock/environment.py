@@ -1,8 +1,3 @@
-"""
-DMS Mock Environment for development and testing.
-Provides a local Postgres and Azurite setup for document management system emulation.
-"""
-
 import logging
 import os
 import time
