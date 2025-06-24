@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Script to run the Credit OCR Demo Backend API server
-"""
-
 import uvicorn
 import os
 import sys
