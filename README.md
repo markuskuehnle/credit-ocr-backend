@@ -6,6 +6,34 @@ The Credit Document OCR System represents a sophisticated solution that signific
 
 A sophisticated backend system for automated credit request document processing using OCR, LLM extraction, and intelligent field mapping. This system processes credit application documents, extracts relevant information using AI, and provides structured data output with confidence scoring.
 
+## Design Log
+
+### Key Assumptions
+
+The system design is built on several foundational assumptions that guide its architecture and capabilities. We assume that credit application documents follow relatively consistent formats and structures, allowing for predictable field extraction patterns. The system assumes that Azure Form Recognizer provides sufficient OCR accuracy for the document types being processed, and that the selected LLM model (Ollama) can effectively interpret and extract structured data from OCR results. We also assume that the processing pipeline can handle the expected document volume without requiring real-time processing guarantees, allowing for asynchronous task processing through Celery.
+
+### Design Tradeoffs
+
+**Accuracy vs. Speed**: The multi-stage processing pipeline prioritizes accuracy over speed, accepting longer processing times in exchange for higher confidence in extracted data. This tradeoff is particularly evident in the LLM extraction phase, where more comprehensive analysis takes precedence over rapid response times.
+
+**Flexibility vs. Complexity**: The system balances document format flexibility with processing complexity. While supporting multiple document types and field mappings increases adaptability, it also introduces complexity in validation rules and field mapping configurations.
+
+**Local vs. Cloud Processing**: The choice of local Ollama deployment for LLM processing prioritizes data privacy and cost control over the scalability and maintenance benefits of cloud-based LLM services. This tradeoff affects deployment complexity and resource requirements.
+
+**Storage Efficiency vs. Audit Trail**: The multi-stage storage approach maintains intermediate processing results for debugging and audit purposes, trading storage efficiency for comprehensive traceability and troubleshooting capabilities.
+
+### System Limitations
+
+**Document Format Dependency**: The system's effectiveness is limited by the quality and consistency of input document formats. Poorly scanned documents, handwritten text, or highly irregular layouts may significantly impact extraction accuracy.
+
+**Language and Regional Constraints**: The current implementation is optimized for German credit documents and may require adaptation for other languages or regional document formats. Field validation rules and business logic are specifically tailored to German financial regulations.
+
+**Processing Scalability**: While the system can handle moderate document volumes, it may face performance bottlenecks under high concurrent load due to the resource-intensive nature of LLM processing and the local deployment model.
+
+**Model Dependency**: Extraction accuracy is directly tied to the quality and training of the underlying LLM model. Changes in model versions or availability could impact system performance and require retraining or adaptation.
+
+**Manual Review Requirements**: Despite automation, the system is designed to flag low-confidence extractions for manual review rather than providing fully autonomous processing, acknowledging the critical nature of financial data accuracy.
+
 ## Features
 
 - **Document Processing Pipeline**: Complete OCR to structured data extraction workflow
