@@ -25,6 +25,7 @@ _dms_environment_started = False
 _should_cleanup_containers = False  # Track if we should clean up containers on shutdown
 dms_environment = None
 _lock_file = None
+_app_started = False  # Track if the app is actually started
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -89,7 +90,13 @@ def _check_existing_containers():
 @app.on_event("startup")
 async def startup_event():
     """Initialize the application on startup."""
-    global dms_environment, _dms_environment_started
+    global dms_environment, _dms_environment_started, _app_started
+    
+    # Only run startup logic if the app is actually being started
+    # This prevents the startup event from running during imports
+    if not _app_started:
+        logger.info("App startup event triggered during import, skipping DMS initialization")
+        return
     
     logger.info("Starting Credit OCR Demo Backend")
     
@@ -509,6 +516,11 @@ async def reprocess_document(document_id: str):
     except Exception as e:
         logger.error(f"Failed to reprocess document {document_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to reprocess document: {str(e)}")
+
+def mark_app_as_started():
+    """Mark the app as started so the startup event will run."""
+    global _app_started
+    _app_started = True
 
 if __name__ == "__main__":
     import uvicorn
