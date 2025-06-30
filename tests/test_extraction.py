@@ -363,13 +363,14 @@ class TestSaveExtractedField:
             value=test_field_value
         )
         
-        # Verify the field was saved to the database
+        # Verify the field was saved
+        connection = _get_database_connection()
         if connection is not None:
             try:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT feldname, wert, konfidenzscore
+                        SELECT dokument_id, feldname, wert, konfidenzscore 
                         FROM ExtrahierteDaten
                         WHERE dokument_id = %s AND feldname = %s
                         """,
@@ -377,14 +378,15 @@ class TestSaveExtractedField:
                     )
                     result = cursor.fetchone()
                     
-                    assert result is not None, "Field was not saved to database"
-                    assert result[0] == test_field_name, "Field name mismatch"
-                    assert result[1] == test_field_value, "Field value mismatch"
-                    assert result[2] is None, "Confidence should be None for basic data"
+                    assert result is not None
+                    assert result[0] == test_document_id
+                    assert result[1] == test_field_name
+                    assert result[2] == test_field_value
+                    assert result[3] is None  # No confidence score provided
             except Exception as e:
-                logger.warning(f"Failed to verify field save: {e}")
-                # If database is not available, just verify the function doesn't raise an exception
-                assert True
+                logger.warning(f"Database verification failed: {e}")
+            finally:
+                connection.close()
     
     def test_saves_field_with_position_and_confidence(self, setup_database_env):
         """Test that save_extracted_field saves field data with position and confidence."""

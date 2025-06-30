@@ -45,6 +45,17 @@ The system design is built on several foundational assumptions that guide its ar
 - **Visualization**: Document annotation with extracted field overlays
 - **Comprehensive Testing**: Full test suite with containerized dependencies
 
+## Planned Enhancements
+
+### Document Preprocessing Pipeline
+- **Image Enhancement**: Implement deskewing and rotation correction to ensure optimal document alignment before OCR processing
+- **Quality Improvement**: Add sharpening, denoising, and background removal capabilities to enhance document readability and OCR accuracy
+- **Digital Text Detection**: Integrate intelligent detection to bypass OCR entirely when documents contain digitally readable text, using direct Python text extraction for improved speed and accuracy
+
+### Local OCR Implementation
+- **Vendor Independence**: Replace Azure Form Recognizer with local OCR solutions (e.g., Tesseract, EasyOCR, Docling) to eliminate vendor lock-in and reduce operational costs
+- **Offline Processing**: Enable complete offline document processing capabilities for enhanced data privacy and reduced latency
+
 ## Architecture
 
 ### Core Components

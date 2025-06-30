@@ -186,8 +186,22 @@ class AppConfig:
             
             # Load LLM configuration
             llm_config = app_config_data.get('generative_llm', {})
+            
+            # Check for environment variable overrides for Ollama
+            ollama_host = os.environ.get('OLLAMA_HOST')
+            ollama_port = os.environ.get('OLLAMA_PORT')
+            
+            if ollama_host and ollama_port:
+                # Use environment variables if available
+                llm_url = f"http://{ollama_host}:{ollama_port}"
+                logger.info(f"Using Ollama URL from environment variables: {llm_url}")
+            else:
+                # Use config file URL
+                llm_url = llm_config.get('url')
+                logger.info(f"Using Ollama URL from config file: {llm_url}")
+            
             self.generative_llm = GenerativeLlm(
-                url=llm_config.get('url'),
+                url=llm_url,
                 model_name=llm_config.get('model_name')
             )
             

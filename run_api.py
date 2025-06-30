@@ -11,7 +11,7 @@ if __name__ == "__main__":
     if not os.getenv("ENVIRONMENT"):
         os.environ["ENVIRONMENT"] = "development"
     
-    print("🚀 Starting Credit OCR Demo Backend API Server")
+    print("Starting Credit OCR Demo Backend API Server")
     print(f"Environment: {os.getenv('ENVIRONMENT', 'development')}")
     print("API will be available at: http://localhost:8000")
     print("API documentation at: http://localhost:8000/docs")

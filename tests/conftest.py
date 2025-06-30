@@ -249,14 +249,14 @@ def test_environment():
     dms_env = DmsMockEnvironment()
     dms_env.start()
     _global_dms_environment = dms_env  # Store globally
-
+    
     # Set DB env vars
     os.environ["POSTGRES_HOST"] = "localhost"
     os.environ["POSTGRES_PORT"] = str(dms_env.postgres_port)
     os.environ["POSTGRES_DB"] = "dms_meta"
     os.environ["POSTGRES_USER"] = "dms"
     os.environ["POSTGRES_PASSWORD"] = "dms"
-
+    
     # Set Azurite env var
     azurite_port = dms_env.azurite_port
     os.environ["AZURE_STORAGE_CONNECTION_STRING"] = (
@@ -276,11 +276,12 @@ def test_environment():
     logger.info("[conftest] Starting Ollama test container")
     ollama_container = DockerContainer("ollama/ollama:latest")
     ollama_container.with_exposed_ports(11435)
+    ollama_container.with_bind_ports(11435, 11435)  # Fixed port mapping
     ollama_container.start()
-    ollama_port = ollama_container.get_exposed_port(11435)
+    ollama_port = 11435  # Use fixed port instead of dynamic
     os.environ["OLLAMA_HOST"] = "localhost"
     os.environ["OLLAMA_PORT"] = str(ollama_port)
-
+    
     yield  # Run tests
 
     # Cleanup

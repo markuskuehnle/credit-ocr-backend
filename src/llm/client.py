@@ -22,7 +22,8 @@ class OllamaClient(LLMClient):
         
     async def generate(self, prompt: str) -> str:
         """Generate a response from Ollama."""
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=120)  # 2 minutes timeout
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             try:
                 async with session.post(
                     f"{self.base_url}/api/generate",

@@ -46,6 +46,6 @@ CREATE TABLE ExtrahierteDaten (
 CREATE INDEX idx_extraktionsauftrag_dokument_id ON Extraktionsauftrag(dokument_id);
 CREATE INDEX idx_extraktionsauftrag_status ON Extraktionsauftrag(status);
 CREATE INDEX idx_extrahierte_daten_dokument_id ON ExtrahierteDaten(dokument_id);
-CREATE INDEX idx_extrahierte_daten_feldname ON ExtrahierteDaten(feldname);
+CREATE INDEX idx_extrahierte_daten_feldname ON ExtrahierteDaten(feldname); 
 CREATE INDEX idx_documents_credit_request_id ON documents(credit_request_id);
 CREATE INDEX idx_documents_status ON documents(status); 
