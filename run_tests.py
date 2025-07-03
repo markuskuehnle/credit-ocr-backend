@@ -67,7 +67,7 @@ def run_tests(test_pattern=None, verbose=False, coverage=False):
     
     try:
         # Build pytest command
-        cmd = ["python", "-m", "pytest"]
+        cmd = ["python3", "-m", "pytest"]
         
         if verbose:
             cmd.append("-v")

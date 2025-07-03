@@ -11,6 +11,7 @@ import uuid
 from testcontainers.redis import RedisContainer
 from testcontainers.core.container import DockerContainer
 from src.dms_mock.environment import DmsMockEnvironment
+from tests.environment.ollama import start_ollama
 import subprocess
 
 from _pytest.config import Config as PytestConfig
@@ -272,28 +273,10 @@ def test_environment():
     os.environ["REDIS_HOST"] = "localhost"
     os.environ["REDIS_PORT"] = str(redis_port)
 
-    # Start Ollama
-    logger.info("[conftest] Starting Ollama test container")
-    ollama_container = DockerContainer("ollama/ollama:latest")
-    ollama_container.with_exposed_ports(11435)
-    ollama_container.with_bind_ports(11435, 11435)  # Fixed port mapping
-    ollama_container.start()
-    ollama_port = 11435  # Use fixed port instead of dynamic
-    os.environ["OLLAMA_HOST"] = "localhost"
-    os.environ["OLLAMA_PORT"] = str(ollama_port)
-    
     yield  # Run tests
 
     # Cleanup
-    logger.info("[conftest] Stopping Ollama, Redis, and DMS mock environment")
-    try:
-        ollama_container.stop()
-        # Remove the container using the underlying Docker container object
-        if hasattr(ollama_container, '_container') and ollama_container._container:
-            ollama_container._container.remove()
-        logger.info("Stopped and removed Ollama container")
-    except Exception as e:
-        logger.warning(f"Failed to stop/remove Ollama container: {e}")
+    logger.info("[conftest] Stopping Redis and DMS mock environment")
     
     try:
         redis_container.stop()
