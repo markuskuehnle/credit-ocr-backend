@@ -103,6 +103,41 @@ class AppSettings:
 
 
 @dataclass
+class OllamaConfig:
+    image: str
+    exposed_port: int
+    bind_port_host: int
+    bind_port_container: int
+    container_name: str
+    cache_dir: str
+    mem_limit: str
+    host: str
+    port: int
+
+    @classmethod
+    def from_config_file(cls, config_path: str) -> 'OllamaConfig':
+        """Load Ollama configuration from HOCON file."""
+        try:
+            config_data = ConfigFactory.parse_file(config_path)
+            ollama_config = config_data.get('ollama', {})
+            
+            return cls(
+                image=ollama_config.get('image'),
+                exposed_port=ollama_config.get('exposed_port'),
+                bind_port_host=ollama_config.get('bind_port_host'),
+                bind_port_container=ollama_config.get('bind_port_container'),
+                container_name=ollama_config.get('container_name'),
+                cache_dir=ollama_config.get('cache_dir'),
+                mem_limit=ollama_config.get('mem_limit'),
+                host=ollama_config.get('host'),
+                port=ollama_config.get('port')
+            )
+        except Exception as e:
+            logger.error(f"Failed to load Ollama configuration from {config_path}: {e}")
+            raise
+
+
+@dataclass
 class DocumentTypeConfig:
     name: str
     expected_fields: List[str]
