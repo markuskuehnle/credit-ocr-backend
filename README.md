@@ -142,7 +142,7 @@ generative_llm {
   model_name = "llama3.2:3b"
 }
 
-minio {
+azure {
   endpoint = "localhost:10000"
   access_key = "devstoreaccount1"
   secret_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
@@ -222,7 +222,7 @@ pytest tests/test_dms_mock.py      # DMS mock tests (no Ollama needed)
 pytest tests/test_field_extraction.py  # LLM tests
 ```
 
-## 🔧 Development Setup
+## Development Setup
 
 ### Container Management
 
